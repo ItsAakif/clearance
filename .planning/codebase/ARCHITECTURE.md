@@ -18,7 +18,7 @@
 │                        EXPRESS API (port 3001)                              │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                     Route Groups (mounted at /api/*)                 │   │
-│  │  auth | resume | ats | job-match | payment | templates | ai          │   │
+│  │  auth | resume | ats | job-match | templates | ai          │   │
 │  │  export | admin | keys | jobs | tailor | applications | profile      │   │
 │  │  boards | searches                                                      │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
@@ -35,7 +35,7 @@
 │                      POSTGRESQL (via Prisma)                                │
 │  User, Resume, ATSReport, JobMatch, Template, CareerProfile, JobBoard,     │
 │  JobListing, JobEvaluation, TailoredResume, Application, AIProviderKey,    │
-│  SavedSearch, Subscription, UsageLog, Coupon, ResumeVariant                │
+│  SavedSearch, ResumeVariant                                                │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -226,7 +226,6 @@ Profile parsing from resume is implemented in `backend/src/profile/parser.ts` (`
 | `/resumes` | `resume.ts` | CRUD, upload/parse, variants, archive, export PDF/DOCX |
 | `/ats` | `ats.ts` | Scan resume (auth + public), reports |
 | `/job-match` | `job-match.ts` | Match resume vs JD (keywords, score) |
-| `/payment` | `payment.ts` | Stripe checkout, portal, webhooks |
 | `/templates` | `templates.ts` | List templates, metadata |
 | `/ai` | `ai.ts` | AI-guided resume generation, bullet improvement |
 | `/export` | `export.ts` | HTML→PDF/DOCX (preview & saved resumes) |
@@ -265,7 +264,7 @@ Profile parsing from resume is implemented in `backend/src/profile/parser.ts` (`
 
 ```prisma
 // Core identity
-User { id, email, passwordHash, plan(FREE|PRO), stripeCustomerId, usageCounters... }
+User { id, email, passwordHash, plan(FREE|PRO), usageCounters... }
 
 // Resume (structured JSON)
 Resume { userId, name, personalInfo(Json), summary, experience(Json), education(Json), 

@@ -85,7 +85,6 @@ describe('API Smoke Tests', () => {
 
 ### Zero Coverage — Usage & Billing
 - `backend/src/shared/usage.ts` — `assertUsageAllowed`, `buildUsageIncrement`, limit logic
-- `backend/src/routes/payment.ts` — Stripe webhooks, subscription handling
 - `backend/src/routes/admin.ts` — Admin-only endpoints
 
 ### Zero Coverage — Data Models

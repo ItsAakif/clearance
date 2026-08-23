@@ -51,7 +51,7 @@ CLI skill). The workflow:
 - `backend/src/routes/templates.ts` + `templates/analyzer.ts` — template metadata/sections →
   "selected template" source of truth.
 - `prisma/schema.prisma` — `Resume`, `JobMatch`, `ATSReport`, **`AIProviderKey`** already exist.
-- Frontend: `Match.tsx`, `TemplateSelector.tsx`, `resumeApi` service, `useAuth`/`usePayment`
+- Frontend: `Match.tsx`, `TemplateSelector.tsx`, `resumeApi` service, `useAuth`
   hooks, `App.tsx` routing — all copy-paste-able patterns.
 
 ### 1.3 BYOK status

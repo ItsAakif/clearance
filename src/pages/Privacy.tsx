@@ -10,7 +10,6 @@ export default function PrivacyPage() {
         <div className="mt-6 space-y-4 text-sm leading-6 text-muted-foreground">
           <p>Clearance stores account details, resumes, ATS reports, and subscription metadata needed to deliver the service.</p>
           <p>Public ATS scans are processed temporarily and stored only as anonymous reports without account linkage.</p>
-          <p>Payment information is handled by Stripe and is not stored directly in the application database.</p>
           <p>You can delete your account from settings to remove your user profile and related resume data.</p>
         </div>
       </main>

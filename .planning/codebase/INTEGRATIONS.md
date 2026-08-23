@@ -51,19 +51,6 @@ Users configure boards in Settings → Job Boards (stored in `JobBoard` model). 
 
 Auth config: `backend/src/config/env.ts:8` (`JWT_SECRET`, min 16 chars).
 
-### Payments
-| Provider | Purpose | Implementation |
-|----------|---------|----------------|
-| **Stripe** | Pro subscriptions ($5/mo), coupons, webhooks | `stripe` v17.1.0, `backend/src/routes/payment.ts` |
-
-**Webhook Events Handled** (`payment.ts:143`):
-- `checkout.session.completed` → upgrade to Pro
-- `customer.subscription.updated` → sync status/period
-- `customer.subscription.deleted` → downgrade to Free
-- `invoice.payment_failed` → mark `past_due`
-
-Required env: `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`.
-
 ### Email (Transactional)
 | Provider | Implementation |
 |----------|----------------|
@@ -77,7 +64,7 @@ Env: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`. Used for 
 |----------|-----|------------|
 | **PostgreSQL** | Prisma 5.22.0 | `DATABASE_URL` env var |
 
-Schema: `backend/prisma/schema.prisma` (User, Resume, ATSReport, JobMatch, JobListing, JobEvaluation, CareerProfile, JobBoard, AIProviderKey, Coupon, Template, etc.)
+Schema: `backend/prisma/schema.prisma` (User, Resume, ATSReport, JobMatch, JobListing, JobEvaluation, CareerProfile, JobBoard, AIProviderKey, Template, etc.)
 
 ### File Processing
 | Library | Purpose |
@@ -112,7 +99,7 @@ Pre-built `.docx` templates in `backend/templates/` (18 files). Used for resume 
 
 | Area | Implementation |
 |------|----------------|
-| **Logging** | `console.log` / `console.error` (structured prefix: `[Clearance API]`, `[Stripe]`, `[Mailer]`, `[ResumeGenerator]`) |
+| **Logging** | `console.log` / `console.error` (structured prefix: `[Clearance API]`, `[Mailer]`, `[ResumeGenerator]`) |
 | **Error Tracking** | None (Sentry, etc. not configured) |
 | **Health Checks** | None exposed |
 | **Rate Limiting** | `express-rate-limit` on all routes (default) + per-key AI rate limiting |
@@ -132,7 +119,6 @@ Pre-built `.docx` templates in `backend/templates/` (18 files). Used for resume 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `VITE_API_URL` | Yes | Backend API base (e.g., `http://localhost:3001/api`) |
-| `VITE_STRIPE_PUBLISHABLE_KEY` | For payments | Stripe public key |
 | `VITE_ENABLE_PUBLIC_SCAN` | No | Feature flag |
 | `VITE_ENABLE_AI_FEATURES` | No | Feature flag |
 | `VITE_GA_MEASUREMENT_ID` | No | Google Analytics |
@@ -147,9 +133,6 @@ Pre-built `.docx` templates in `backend/templates/` (18 files). Used for resume 
 | `NODE_ENV` | No (default development) | `development` \| `test` \| `production` |
 | `CLIENT_URL` | No (default localhost:5173) | CORS origin |
 | `API_URL` | No | Public API base URL |
-| `STRIPE_SECRET_KEY` | For payments | Stripe secret key |
-| `STRIPE_PRICE_ID` | For payments | Pro plan price ID |
-| `STRIPE_WEBHOOK_SECRET` | For payments | Webhook signing secret |
 | `GROQ_API_KEY` / `GROQ_API_KEY_1..20` | For AI (system fallback) | Groq keys for rotation |
 | `OPENAI_API_KEY` | Optional | OpenAI fallback |
 | `OPENROUTER_API_KEY` | Optional | OpenRouter fallback |
@@ -165,11 +148,6 @@ Pre-built `.docx` templates in `backend/templates/` (18 files). Used for resume 
 
 ## Webhooks & Callbacks
 
-### Incoming
-| Endpoint | Provider | Purpose |
-|----------|----------|---------|
-| `POST /api/payment/webhook` | Stripe | Subscription lifecycle events |
-
 ### Outgoing
 | Target | Trigger | Purpose |
 |--------|---------|---------|
@@ -184,7 +162,6 @@ Pre-built `.docx` templates in `backend/templates/` (18 files). Used for resume 
 - **CORS**: Restricted to `CLIENT_URL` (env)
 - **Rate Limiting**: Global `express-rate-limit` + per-provider AI key rotation with cooldown
 - **File Uploads**: 10MB max, MIME allowlist (PDF, DOCX, TXT), filename sanitization, extension blocklist
-- **Webhook Verification**: Stripe signature verification required (`payment.ts:135`)
 
 ---
 

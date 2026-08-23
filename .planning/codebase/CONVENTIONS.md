@@ -53,7 +53,6 @@ src/
 │   ├── useAuth.ts       # Auth state & mutations
 │   ├── useATS.ts        # ATS scan hooks
 │   ├── useResumeApi.ts  # Resume CRUD hooks
-│   ├── usePayment.ts    # Payment/subscription hooks
 │   └── use-toast.ts     # Sonner toast wrapper
 ├── services/api/
 │   ├── client.ts        # apiClient (fetch wrapper, credentials: 'include', 401→refresh)
@@ -62,7 +61,6 @@ src/
 │   ├── ats.ts           # atsApi
 │   ├── templates.ts     # templateApi
 │   ├── resume.ts        # resumeApi
-│   ├── payment.ts       # paymentApi
 │   └── admin.ts         # adminApi
 ├── lib/
 │   ├── utils.ts         # cn(), formatters
@@ -74,7 +72,7 @@ src/
 **Backend** (`backend/src/`)
 ```
 src/
-├── routes/              # Express routers (auth, jobs, resume, ats, profile, payment, etc.)
+├── routes/              # Express routers (auth, jobs, resume, ats, profile, etc.)
 ├── middleware/
 │   ├── auth.ts          # requireAuth, optionalAuth, JWT verify, cookie handling
 │   └── admin.ts         # requireAdmin
@@ -264,8 +262,8 @@ maskKey(key: string): string;               // "sk-abcd…wxyz"
 
 **Client**: `backend/src/lib/prisma.ts` — singleton with dev logging
 **Schema**: `backend/prisma/schema.prisma`
-- Models: `User`, `Resume`, `ResumeVariant`, `JobListing`, `JobEvaluation`, `TailoredResume`, `Application`, `CareerProfile`, `JobBoard`, `SavedSearch`, `AIProviderKey`, `Subscription`, `Coupon`, `AdminSettings`
-- Enums: `Plan` (FREE, PRO), `SubscriptionStatus`, `ApplicationStatus`, `JobSourceType`
+- Models: `User`, `Resume`, `ResumeVariant`, `JobListing`, `JobEvaluation`, `TailoredResume`, `Application`, `CareerProfile`, `JobBoard`, `SavedSearch`, `AIProviderKey`, `AdminSettings`
+- Enums: `Plan` (FREE, PRO), `ApplicationStatus`, `JobSourceType`
 
 ---
 
@@ -277,7 +275,6 @@ maskKey(key: string): string;               // "sk-abcd…wxyz"
 ### Backend (`backend/src/config/env.ts`)
 - `JWT_SECRET`, `KEY_ENCRYPTION_SECRET`
 - `DATABASE_URL`
-- `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`
 - `OPENAI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`, `TAVILY_API_KEY`
 - `SMTP_*` for Nodemailer
 - `CLIENT_URL`, `NODE_ENV`

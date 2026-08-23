@@ -24,7 +24,6 @@ E:\Projects\Webd+AI\Clearance\
 │   │   │   ├── resume.ts             # CRUD, upload/parse, variants, archive, export PDF/DOCX (1223 lines)
 │   │   │   ├── ats.ts                # scan (auth + public), reports
 │   │   │   ├── job-match.ts          # match resume vs JD
-│   │   │   ├── payment.ts            # Stripe checkout, portal, webhooks
 │   │   │   ├── templates.ts          # list templates + metadata
 │   │   │   ├── ai.ts                 # AI-guided resume generation, bullet improvement
 │   │   │   ├── export.ts             # HTML→PDF/DOCX (Puppeteer + html-to-docx)
@@ -128,7 +127,6 @@ E:\Projects\Webd+AI\Clearance\
 │   │   ├── useResumeApi.ts           # useResumes, useResume, useCreateResume, useUpdateResume, useDeleteResume, useUploadResume, useExportPdf, useExportDocx
 │   │   ├── useATS.ts                 # useATSReport, useResumeATSReports, useScanResume, useScanResumePublic, useJobMatch, useMatchJob
 │   │   ├── useJobs.ts                # useJobs, useJobBoards, useJobEvaluations, useTailoredResumes
-│   │   ├── usePayment.ts             # useSubscriptionStatus, useIsPro, useCheckout, useApplyCoupon
 │   │   ├── useTemplateSettings.ts
 │   │   ├── useResumeData.ts          # Local resume form state (context-like)
 │   │   ├── useDynamicResumeData.ts
@@ -168,7 +166,6 @@ E:\Projects\Webd+AI\Clearance\
 │   │   ├── resume.ts                 # resumeApi (CRUD, upload, variants, export, transformResume)
 │   │   ├── ats.ts                    # atsApi (scan, reports, match)
 │   │   ├── jobs.ts                   # jobsApi (search, scan, evaluate, listings)
-│   │   ├── payment.ts                # paymentApi (subscription, checkout)
 │   │   ├── admin.ts                  # adminApi (stats, users)
 │   │   ├── ai.ts                     # aiApi (generate, improve)
 │   │   ├── keys.ts                   # keysApi (BYOK CRUD)

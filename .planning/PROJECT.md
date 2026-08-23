@@ -20,7 +20,7 @@ JD↔resume matching, LLM-powered tailoring, and a library of exportable templat
   Recharts, Three.js, Framer Motion, docx/html-to-docx, pdf-parse/mammoth.
 - **Backend**: Node.js ≥ 18, Express 4, TypeScript (strict), Prisma 5 (PostgreSQL),
   JWT auth (httpOnly cookie), Zod validation, Multer uploads, Nodemailer,
-  Stripe, `openai` SDK (used with Groq/OpenRouter/Gemini via `baseURL` override).
+  `openai` SDK (used with Groq/OpenRouter/Gemini via `baseURL` override).
 - **AI/ML**: Groq (`llama-3.1-70b`) primary; OpenAI/OpenRouter/Gemini via BYOK;
   Tavily for web search. All LLM access routed through `leaseNextLlmKey`.
 - **Testing**: Vitest + Supertest. **Lint/Format**: ESLint 9 (flat) + typescript-eslint.
@@ -29,7 +29,7 @@ JD↔resume matching, LLM-powered tailoring, and a library of exportable templat
 ## Architecture (summary — see `.planning/codebase/ARCHITECTURE.md` for detail)
 
 - **Browser (SPA)** → REST over HTTPS (`credentials: include`) → **Express API** (port 3001,
-  route groups under `/api/*`: auth, resumes, ats, job-match, payment, templates, ai,
+  route groups under `/api/*`: auth, resumes, ats, job-match, templates, ai,
   export, admin, keys, jobs, tailor, applications, profile, boards, searches) →
   **PostgreSQL** via Prisma.
 - **Key pipelines**: (1) Resume parse → ATS scan → template render → DOCX/PDF export;

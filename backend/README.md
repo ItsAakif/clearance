@@ -9,7 +9,6 @@ Built with **Express + Prisma** for a standard Node.js backend architecture.
 - **Framework**: Express.js 4.x
 - **Database**: PostgreSQL with Prisma ORM
 - **Auth**: JWT tokens in httpOnly cookies
-- **Payments**: Stripe (single Pro plan + coupon codes)
 - **AI**: Multi-provider support (OpenAI, Groq, OpenRouter, Gemini)
 - **File Processing**: pdf-parse, mammoth, docx, puppeteer
 
@@ -43,8 +42,6 @@ Built with **Express + Prisma** for a standard Node.js backend architecture.
    Edit `.env` with your values:
    - `DATABASE_URL` - PostgreSQL connection string
    - `JWT_SECRET` - Generate with `openssl rand -base64 32`
-   - `STRIPE_SECRET_KEY` - From Stripe dashboard
-   - `STRIPE_WEBHOOK_SECRET` - From Stripe webhook settings
    - `CLIENT_URL` - Frontend URL for CORS
 
 5. **Start database:**
@@ -107,7 +104,6 @@ backend/
 │   │   ├── resume.ts       # Resume CRUD routes
 │   │   ├── ats.ts          # ATS scanning routes
 │   │   ├── job-match.ts    # Job matching routes
-│   │   ├── payment.ts      # Stripe payment routes
 │   │   └── templates.ts    # Template catalog routes
 │   ├── resume/
 │   │   ├── parser.ts       # PDF/DOCX parsing
@@ -165,14 +161,6 @@ backend/
 | POST | /api/job-match | Yes | Match job description |
 | GET | /api/job-match/:matchId | Yes | Get match result |
 
-### Payments
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | /api/payment/create-checkout | Yes | Create Stripe checkout |
-| POST | /api/payment/webhook | No | Stripe webhook |
-| POST | /api/payment/apply-coupon | Yes | Apply coupon code |
-| GET | /api/payment/status | Yes | Get subscription status |
-
 ### Templates
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
@@ -206,7 +194,6 @@ Following `rules/security.md`:
 - No sensitive data in logs (passwords, tokens, PII)
 - Generic error messages to users
 - Rate limiting on all endpoints
-- Stripe webhook signature verification
 - CORS configured for allowed origins
 - JWT tokens in httpOnly cookies
 
@@ -247,12 +234,6 @@ docker run -p 3001:3001 \
   -e JWT_SECRET=... \
   clearance-backend
 ```
-
-### Stripe Webhook
-
-Set up webhook endpoint in Stripe dashboard:
-- URL: `https://your-domain.com/api/payment/webhook`
-- Events: `checkout.session.completed`, `customer.subscription.*`, `invoice.payment_failed`
 
 ## Development
 
