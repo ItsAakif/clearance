@@ -1,0 +1,31 @@
+# Clearance - one-command stack: Node backend (no Python sidecar).
+#
+# Usage:
+#   docker compose up --build
+#
+# All job scraping runs in the Node backend via user-supplied backends (BYOK):
+#   - Firecrawl / Crawl4AI (self-hostable): medium boards (YC, Wellfound, Instahyre, Sprout, Google)
+#   - RapidAPI (JSearch + PullAPI): hard boards (LinkedIn, Indeed, ZipRecruiter, Glassdoor, Bayt, Naukri)
+# Add each backend's key (and self-host URL) in the app Settings page.
+#
+# Secrets: copy backend/.env before up.
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      CLIENT_URL: ${CLIENT_URL}
+      # Self-host registration: false = first signup becomes admin, then locked.
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      # Optional env search keys (DB-stored BYOK keys also work)
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      EXA_API_KEY: ${EXA_API_KEY:-}
+    env_file:
+      - ./backend/.env
+    restart: unless-stopped

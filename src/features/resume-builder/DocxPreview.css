@@ -1,0 +1,230 @@
+.docx-preview-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  padding: 1.5rem;
+  overflow: auto;
+  min-height: 0;
+}
+
+.docx-preview-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  color: hsl(var(--muted-foreground));
+  z-index: 10;
+  pointer-events: none;
+}
+
+.docx-preview-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 3rem;
+  text-align: center;
+  color: hsl(var(--muted-foreground));
+  height: 100%;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+}
+
+.docx-preview-error h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+.docx-preview-error p {
+  max-width: 300px;
+  font-size: 0.875rem;
+}
+
+.docx-preview-container {
+  background: white;
+  box-shadow: 
+    0 25px 50px -12px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  transition: opacity 0.3s ease;
+  flex-shrink: 0;
+  margin: 0 auto;
+}
+
+.docx-preview-container .docx-wrapper {
+  background: white !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: visible !important;
+}
+
+.docx-preview-container .docx-wrapper > section.docx {
+  box-shadow: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: auto !important;
+}
+
+.docx-editable {
+  cursor: text;
+  transition: all 0.15s ease;
+  border-radius: 2px;
+  position: relative;
+}
+
+.docx-editable:hover {
+  outline: 2px solid rgba(99, 102, 241, 0.4);
+  outline-offset: 2px;
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.docx-editable:focus,
+.docx-editing {
+  outline: 2px solid rgba(99, 102, 241, 0.8) !important;
+  outline-offset: 2px;
+  background: rgba(99, 102, 241, 0.1) !important;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
+}
+
+.docx-editable:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
+}
+
+.docx-editable[data-field-path]:not([data-field-path^="unmapped"])::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 0;
+  background: rgba(99, 102, 241, 0.6);
+  border-radius: 2px;
+  transition: height 0.2s ease;
+}
+
+.docx-editable[data-field-path]:not([data-field-path^="unmapped"]):hover::before,
+.docx-editable[data-field-path]:not([data-field-path^="unmapped"]):focus::before {
+  height: 100%;
+}
+
+.docx-section-controls {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 100;
+}
+
+.docx-section-control {
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.docx-add-button {
+  background: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transition: all 0.2s ease;
+}
+
+.docx-add-button:hover {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+.docx-entry-controls {
+  position: absolute;
+  right: -40px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.docx-editable:hover .docx-entry-controls,
+.docx-entry-controls:hover {
+  opacity: 1;
+}
+
+.docx-delete-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  background: hsl(var(--destructive));
+  color: hsl(var(--destructive-foreground));
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.docx-delete-button:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+@media (max-width: 1024px) {
+  .docx-preview-wrapper {
+    padding: 1rem;
+  }
+  
+  .docx-preview-container {
+    transform: scale(0.8);
+    transform-origin: top center;
+  }
+  
+  .docx-section-controls {
+    bottom: 1rem;
+    right: 1rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .docx-preview-wrapper {
+    padding: 0.5rem;
+  }
+  
+  .docx-preview-container {
+    transform: scale(0.6);
+    transform-origin: top center;
+  }
+  
+  .docx-section-controls {
+    bottom: 0.5rem;
+    right: 0.5rem;
+  }
+  
+  .docx-add-button {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+  }
+}

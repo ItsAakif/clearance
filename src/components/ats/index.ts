@@ -1,0 +1,1 @@
+export { ATSQuickScore } from "./ATSQuickScore";

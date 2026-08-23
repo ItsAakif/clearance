@@ -1,0 +1,243 @@
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-sans/700.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Clearance Design System
+   Warm, neutral, trustworthy
+   Human-made, editorial quality
+   Brighter, more vibrant palette
+*/
+
+@layer base {
+  :root {
+    /* Blue-centric palette with grey neutrals */
+    --background: 0 0% 99%; /* Emptiness #FCFCFC */
+    --foreground: 210 15% 25%; /* Dark blue-grey for text */
+
+    --card: 0 0% 100%;
+    --card-foreground: 210 15% 25%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 15% 25%;
+
+    /* Primary - Blue Nebula #1297FD */
+    --primary: 209 98% 53%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary - Windswept Beach #E3E4E6 */
+    --secondary: 220 5% 90%;
+    --secondary-foreground: 210 15% 25%;
+
+    /* Muted - Explosive Grey #C3C3C5 */
+    --muted: 240 2% 90%;
+    --muted-foreground: 240 2% 45%;
+
+    /* Accent - Adamantine Blue #40AAF8 */
+    --accent: 207 93% 61%;
+    --accent-foreground: 0 0% 100%;
+    --accent-emphasis: 209 98% 53%;
+    
+    /* Accent variants using new palette */
+    --accent-light: 210 89% 76%; /* Drift on the Sea #8BCAF9 */
+    --accent-medium: 207 93% 61%; /* Adamantine Blue #40AAF8 */
+    --accent-dark: 209 98% 53%; /* Blue Nebula #1297FD */
+    --accent-grey: 240 2% 77%; /* Explosive Grey #C3C3C5 */
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Success/Warning */
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 220 5% 90%;
+    --input: 220 5% 90%;
+    --ring: 209 98% 53%;
+
+    --radius: 0.75rem;
+
+    /* Sidebar */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 210 15% 25%;
+    --sidebar-primary: 209 98% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 89% 76%;
+    --sidebar-accent-foreground: 209 98% 35%;
+    --sidebar-border: 220 5% 90%;
+    --sidebar-ring: 209 98% 53%;
+
+    /* Dot grid colors */
+    --dot-color: 209 98% 53%;
+    --dot-opacity: 0.12;
+    --dot-hover-opacity: 0.35;
+
+    /* Gradient for hero */
+    --gradient-start: 210 89% 92%;
+    --gradient-end: 0 0% 99%;
+  }
+
+  .dark {
+    --background: 215 20% 10%;
+    --foreground: 210 20% 92%;
+
+    --card: 215 18% 13%;
+    --card-foreground: 210 20% 92%;
+
+    --popover: 215 18% 13%;
+    --popover-foreground: 210 20% 92%;
+
+    --primary: 209 98% 58%;
+    --primary-foreground: 215 20% 10%;
+
+    --secondary: 215 15% 20%;
+    --secondary-foreground: 210 20% 92%;
+
+    --muted: 215 15% 18%;
+    --muted-foreground: 210 10% 55%;
+
+    --accent: 207 85% 50%;
+    --accent-foreground: 0 0% 100%;
+    --accent-emphasis: 209 98% 58%;
+    
+    --accent-light: 210 70% 45%;
+    --accent-medium: 207 85% 50%;
+    --accent-dark: 209 98% 58%;
+    --accent-grey: 215 10% 35%;
+
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 60% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 80% 50%;
+    --warning-foreground: 215 20% 10%;
+
+    --border: 215 15% 22%;
+    --input: 215 15% 22%;
+    --ring: 209 98% 58%;
+
+    --sidebar-background: 215 18% 13%;
+    --sidebar-foreground: 210 20% 92%;
+    --sidebar-primary: 209 98% 58%;
+    --sidebar-primary-foreground: 215 20% 10%;
+    --sidebar-accent: 215 15% 20%;
+    --sidebar-accent-foreground: 210 20% 92%;
+    --sidebar-border: 215 15% 22%;
+    --sidebar-ring: 209 98% 58%;
+
+    --dot-color: 209 98% 58%;
+    --dot-opacity: 0.08;
+    --dot-hover-opacity: 0.25;
+
+    --gradient-start: 215 18% 15%;
+    --gradient-end: 215 20% 10%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Animation utilities */
+@layer components {
+  .btn-hover {
+    @apply transition-all duration-200 ease-out;
+  }
+  
+  .btn-hover:hover {
+    @apply shadow-md;
+  }
+  
+  .btn-hover:active {
+    @apply scale-[0.98];
+  }
+  
+  .card-hover {
+    @apply transition-all duration-200 ease-out;
+  }
+  
+  .card-hover:hover {
+    @apply shadow-xl -translate-y-1;
+  }
+  
+  .tab-underline {
+    @apply relative after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full after:scale-x-0 after:bg-primary after:transition-transform after:duration-200 after:ease-out;
+  }
+  
+  .tab-underline[data-state="active"]::after,
+  .tab-underline:hover::after {
+    @apply scale-x-100;
+  }
+
+  /* Animated gradient background */
+  .gradient-bg {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--accent-dark)) 0%,
+      hsl(var(--accent-medium)) 35%,
+      hsl(var(--accent-light)) 65%,
+      hsl(var(--secondary)) 100%
+    );
+    background-size: 400% 400%;
+    animation: gradient-shift 15s ease infinite;
+  }
+
+  @keyframes gradient-shift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+
+  /* Shimmer effect */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--foreground) / 0.08),
+      transparent
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* Pulse glow */
+  .pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { 
+      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.4);
+    }
+    50% { 
+      box-shadow: 0 0 20px 10px hsl(var(--primary) / 0.1);
+    }
+  }
+}

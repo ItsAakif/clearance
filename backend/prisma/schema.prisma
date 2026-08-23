@@ -1,0 +1,371 @@
+// Clearance Database Schema
+// PostgreSQL with Prisma ORM
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==================== USER & AUTH ====================
+model UploadedFile {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  fileName   String
+  fileType   String   // MIME type
+  fileBytes  Bytes    // raw uploaded file (PDF/DOCX/TXT) - never parsed into builder resume
+  extractedText String @default("") // deterministic raw text extraction (pdf-parse/mammoth)
+
+  createdAt  DateTime @default(now())
+
+  jobMatches JobMatch[]
+
+  @@index([userId])
+}
+
+model User {
+  id                     String    @id @default(uuid())
+  email                  String    @unique
+  passwordHash           String
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  
+  // Profile
+  name                   String?
+  avatarUrl              String?
+  
+  // OAuth
+  googleId               String?   @unique
+  
+  // Email verification
+  emailVerified          Boolean   @default(false)
+  emailVerifyToken       String?
+  emailVerifyExpires     DateTime?
+  
+  // Password reset
+  passwordResetToken     String?
+  passwordResetExpires   DateTime?
+
+  // Relations
+  resumes                Resume[]
+  uploadedFiles          UploadedFile[]
+  atsReports             ATSReport[]
+  jobMatches             JobMatch[]
+  apiKeys               AIProviderKey[]
+  jobEvaluations        JobEvaluation[]
+  tailoredResumes       TailoredResume[]
+  applications          Application[]
+  careerProfile         CareerProfile?
+  jobBoards             JobBoard[]
+  savedSearches         SavedSearch[]
+}
+
+// ==================== RESUME ====================
+model Resume {
+  id               String    @id @default(uuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  name             String    @default("Untitled Resume")
+  
+  // Content (stored as structured JSON)
+  personalInfo     Json      // { fullName, email, phone, location, linkedin?, website? }
+  summary          String    @default("")
+  experience       Json      @default("[]") // ExperienceItem[]
+  education        Json      @default("[]") // EducationItem[]
+  skills           Json      @default("[]") // string[]
+  projects         Json?     // Optional ProjectItem[]
+  languages        Json?     // Optional string[] of spoken languages
+  
+  // Section ordering and visibility
+  sections         Json      @default("[]") // ResumeSection[]
+  
+  // Template settings
+  templateId       String    @default("classic")
+  templateSettings Json      @default("{\"marginX\": 0.75, \"marginY\": 0.75, \"fontSize\": 11, \"lineSpacing\": 1.4, \"sectionSpacing\": 1.5}")
+  
+  // Metadata
+  isArchived       Boolean   @default(false)
+  lastATSScore     Int?
+  
+  // Stored original uploaded file (for "Original File" preview in Build)
+  originalFile     Bytes?
+  originalFileType String?
+  
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  
+  // Relations
+  variants         ResumeVariant[]
+  atsReports       ATSReport[]
+  jobMatches       JobMatch[]
+  
+  @@index([userId])
+}
+
+model ResumeVariant {
+  id         String   @id @default(uuid())
+  resumeId   String
+  resume     Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  
+  name       String
+  targetJob  String?
+  
+  // Overridden content (null = use base resume value)
+  summary    String?
+  experience Json?
+  skills     Json?
+  
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  
+  @@index([resumeId])
+}
+
+// ==================== ATS SCANNING ====================
+model ATSReport {
+  id              String   @id @default(uuid())
+  resumeId        String?
+  resume          Resume?  @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  overallScore    Int      // 0-100
+  status          String   // 'excellent', 'good', 'needs-work', 'poor'
+  
+  // Detailed breakdown (deterministic rules)
+  categories      Json     // ATSCategoryScore[]
+  keywords        Json     // { found: string[], missing: string[] }
+  formatting      Json     // { isAtsCompatible: boolean, issues: string[] }
+  
+  // LLM evaluation (hiring-agent style)
+  evaluationJson  Json?    // { categories: [], keyStrengths: [], areasForImprovement: [], bonusPoints: [], deductions: [], overallReasoning: string }
+  scoredBy        String?  // 'llm' | 'rules'
+  
+  // For public scans (no auth required)
+  isPublicScan    Boolean  @default(false)
+  uploadedFileHash String?
+  fileName        String?
+  
+  createdAt       DateTime @default(now())
+  
+  @@index([resumeId])
+  @@index([userId])
+}
+
+// ==================== JOB MATCHING ====================
+model JobMatch {
+  id              String   @id @default(uuid())
+  resumeId        String?
+  resume          Resume?  @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  uploadedFileId  String?
+  uploadedFile    UploadedFile? @relation(fields: [uploadedFileId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  jobDescription  String   @db.Text
+  jobTitle        String?
+  
+  matchScore      Int      // 0-100
+  matchedKeywords Json     // string[]
+  missingKeywords Json     // string[]
+  suggestions     Json     // string[]
+
+  // Tailoring enhancements
+  detectedRole    String?  // role bank key, e.g. 'software-engineer'
+  criticalMissing Json     // string[] - hard requirements absent from resume
+  preferredMissing Json    // string[] - nice-to-have skills absent
+  roleSuggestions Json     // string[] - role keywords candidate has but job omitted
+  tailoringTips  Json     // string[] - optional LLM phrasing tips
+  
+  createdAt       DateTime @default(now())
+  
+  @@index([resumeId])
+  @@index([userId])
+}
+
+// ==================== TEMPLATES ====================
+model Template {
+  id              String   @id
+  name            String
+  description     String
+  category        String   // 'classic', 'modern', 'minimal'
+  isAtsOptimized  Boolean  @default(true)
+  defaultSettings Json     // TemplateSettings
+  isActive        Boolean  @default(true)
+  
+  createdAt       DateTime @default(now())
+}
+
+// ==================== CAREER PROFILE & JOB BOARDS ====================
+model CareerProfile {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  targetRoles   Json?    // string[] e.g. ["Backend Engineer", "ML Engineer"]
+  seniority     String?  // 'junior' | 'mid' | 'senior' | 'staff' | 'lead' | 'principal'
+  minSalary     Int?
+  maxSalary     Int?
+  currency      String?  @default("USD")
+  locationPref  String?  // 'Remote', 'NYC', etc.
+  remoteOnly    Boolean  @default(false)
+  topSkills     Json?    // string[]
+  industries    Json?    // string[]
+  redFlags      Json?    // string[] (e.g. "crypto", "no equity")
+  proofPoints   Json?    // string[] (talking points for interview prep)
+  summary       String?  // free-text "who I am"
+  parsedFromResumeId String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model JobBoard {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String   // 'greenhouse' | 'ashby' | 'lever' | 'workday' | 'rss' | 'json' | 'search' | 'smartrecruiters' | 'recruitee' | 'personio' | 'jobicy' | 'scraper'
+  name        String   // display name
+  // For ATS boards: company/board token; for rss/workday/json: feedUrl; for search: query+site
+  boardId     String?  // greenhouse/ashby/lever/smartrecruiters/recruitee/personio company token
+  feedUrl     String?  // rss/workday/json feed url
+  searchQuery String?  // search query string (for type='search')
+  searchSite  String?  // site filter e.g. "jobs.ashbyhq.com" (for type='search')
+  // For scraper type (Node unified backend: Firecrawl/Crawl4AI/RapidAPI, BYOK)
+  scraperProvider String? // board name e.g. "linkedin", "indeed", "naukri", "ycombinator", "wellfound"
+  scraperLocation String? // location hint for the board
+  scraperResults  Int?    // max results requested
+  scraperUseProxy Boolean? @default(false) // reserved; unused by RapidAPI/Firecrawl
+  // For aggregator type (official BYOK job APIs: Adzuna/Careerjet/Jooble)
+  aggregatorProvider String? // 'adzuna' | 'careerjet' | 'jooble'
+  aggregatorLocation String? // location hint (country/city)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+model SavedSearch {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  query       String
+  location    String?
+  company     String?
+  sources     Json?    // string[] of JobBoard ids or source types
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+model AIProviderKey {
+  id               String    @id @default(uuid())
+  userId           String?   // NULL = system/global key (env-equivalent)
+  user             User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider         String    // 'openai' | 'groq' | 'openrouter' | 'gemini' | 'tavily'
+  apiKey           String    // Encrypted at rest (see lib/crypto.ts)
+  label            String?
+  
+  isActive         Boolean   @default(true)
+  lastUsedAt       DateTime?
+  lastValidatedAt  DateTime?
+  failureCount     Int       @default(0)
+  rateLimitedUntil DateTime?
+  
+  createdAt        DateTime  @default(now())
+  
+  @@index([userId, provider])
+}
+
+// ==================== JOB DISCOVERY & TRACKING ====================
+model JobListing {
+  id            String   @id @default(uuid())
+  externalId    String?
+  source        String   // 'greenhouse' | 'ashby' | 'lever' | 'workday' | 'rss'
+  sourceUrl     String
+  title         String
+  company       String
+  location      String?
+  description   String   @db.Text
+  applyUrl      String?
+  postedAt      DateTime?
+  expiresAt     DateTime?
+  isActive      Boolean  @default(true)
+  lastVerifiedAt DateTime?
+  createdAt     DateTime @default(now())
+
+  evaluations   JobEvaluation[]
+  applications  Application[]
+
+  @@unique([source, externalId])
+  @@index([company])
+  @@index([isActive, postedAt])
+}
+
+model JobEvaluation {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobListingId  String
+  jobListing    JobListing @relation(fields: [jobListingId], references: [id], onDelete: Cascade)
+  resumeId      String?
+
+  // A-G rubric scores (1-5) + overall
+  roleSummary         String?
+  cvMatchScore        Float?
+  levelFitScore       Float?
+  compFitScore        Float?
+  personalizationScore Float?
+  interviewPrepScore  Float?
+  legitimacyScore     Float?
+  overallScore        Float
+  recommendation      String?  // 'apply' | 'maybe' | 'skip'
+  isScam              Boolean  @default(false)
+  reportJson          Json?
+
+  tailoredResumes TailoredResume[]
+  createdAt       DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model TailoredResume {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobEvaluationId String?
+  jobEvaluation   JobEvaluation? @relation(fields: [jobEvaluationId], references: [id], onDelete: SetNull)
+  sourceResumeId  String
+  templateId      String
+  jobListingId    String?
+  title           String
+  content         Json
+  html            String?  @db.Text
+  createdAt       DateTime @default(now())
+
+  applications    Application[]
+
+  @@index([userId, createdAt])
+}
+
+model Application {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobListingId    String
+  jobListing      JobListing @relation(fields: [jobListingId], references: [id], onDelete: Cascade)
+  tailoredResumeId String?
+  tailoredResume  TailoredResume? @relation(fields: [tailoredResumeId], references: [id], onDelete: SetNull)
+  status          String   @default("saved") // saved|tailored|applied|interview|offer|rejected
+  notes           String?
+  appliedAt       DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([userId, status])
+}
