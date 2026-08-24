@@ -1,87 +1,74 @@
-// JWT Authentication Middleware
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import prisma from '../lib/prisma.js';
-import { env, getAdminEmails } from '../config/env.js';
+import { env } from '../config/env.js';
 
-const JWT_SECRET = env.JWT_SECRET;
-const JWT_EXPIRES_IN = '7d';
-const adminEmails = getAdminEmails();
-
-export interface JwtPayload {
-  userId: string;
-  email: string;
+export function hashSessionToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-/**
- * Generate JWT token for user
- */
-export function generateToken(userId: string, email: string): string {
-  return jwt.sign(
-    { userId, email } as JwtPayload,
-    JWT_SECRET,
-    { expiresIn: JWT_EXPIRES_IN }
-  );
+export function createSessionToken(): string {
+  return crypto.randomBytes(32).toString('hex');
 }
 
-/**
- * Verify JWT token
- */
-export function verifyToken(token: string): JwtPayload | null {
-  try {
-    return jwt.verify(token, JWT_SECRET) as JwtPayload;
-  } catch {
-    return null;
-  }
+export function getSessionToken(req: Request): string | undefined {
+  return req.cookies?.clearance_session;
 }
 
-/**
- * Auth middleware - requires valid JWT
- */
+export function isAccessPasswordValid(password: string): boolean {
+  const expected = env.CLEARANCE_ACCESS_PASSWORD;
+  if (!expected) return false;
+  const submittedHash = crypto.createHash('sha256').update(password).digest('hex');
+  const expectedHash = crypto.createHash('sha256').update(expected).digest('hex');
+  return crypto.timingSafeEqual(Buffer.from(submittedHash), Buffer.from(expectedHash));
+}
+
+export function setSessionCookie(res: Response, rawToken: string): void {
+  res.cookie('clearance_session', rawToken, {
+    httpOnly: true,
+    secure: env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: '/',
+  });
+}
+
+export function clearAuthCookie(res: Response): void {
+  res.clearCookie('clearance_session', {
+    httpOnly: true,
+    secure: env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+  });
+}
+
 export async function requireAuth(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
-    // Get token from cookie or Authorization header
-    let token = req.cookies?.token;
-    
-    if (!token) {
-      const authHeader = req.headers.authorization;
-      if (authHeader?.startsWith('Bearer ')) {
-        token = authHeader.substring(7);
-      }
-    }
-    
+    const token = getSessionToken(req);
     if (!token) {
       res.status(401).json({ error: 'Authentication required' });
       return;
     }
-    
-    const payload = verifyToken(token);
-    if (!payload) {
-      res.status(401).json({ error: 'Invalid or expired token' });
-      return;
-    }
-    
-    // Verify user exists
-    const user = await prisma.user.findUnique({
-      where: { id: payload.userId },
-      select: { id: true, email: true, emailVerified: true }
+
+    const tokenHash = hashSessionToken(token);
+    const session = await prisma.session.findUnique({
+      where: { tokenHash },
+      include: { user: true },
     });
-    
-    if (!user) {
-      res.status(401).json({ error: 'User not found' });
+
+    if (!session || session.expiresAt < new Date()) {
+      res.status(401).json({ error: 'Authentication required' });
       return;
     }
-    
-    // Attach user to request
+
     req.user = {
-      id: user.id,
-      email: user.email,
-      emailVerified: user.emailVerified,
-      isAdmin: adminEmails.has(user.email.toLowerCase()),
+      id: session.user.id,
+      email: session.user.email,
+      isAdmin: true,
     };
     next();
   } catch (error) {
@@ -90,69 +77,34 @@ export async function requireAuth(
   }
 }
 
-/**
- * Optional auth middleware - populates user if token present
- */
 export async function optionalAuth(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
-    let token = req.cookies?.token;
-    
+    const token = getSessionToken(req);
     if (!token) {
-      const authHeader = req.headers.authorization;
-      if (authHeader?.startsWith('Bearer ')) {
-        token = authHeader.substring(7);
-      }
+      next();
+      return;
     }
-    
-    if (token) {
-      const payload = verifyToken(token);
-      if (payload) {
-        const user = await prisma.user.findUnique({
-          where: { id: payload.userId },
-          select: { id: true, email: true, emailVerified: true }
-        });
-        
-        if (user) {
-          req.user = {
-            id: user.id,
-            email: user.email,
-            emailVerified: user.emailVerified,
-            isAdmin: adminEmails.has(user.email.toLowerCase()),
-          };
-        }
-      }
+
+    const tokenHash = hashSessionToken(token);
+    const session = await prisma.session.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+
+    if (session && session.expiresAt >= new Date()) {
+      req.user = {
+        id: session.user.id,
+        email: session.user.email,
+        isAdmin: true,
+      };
     }
-    
+
     next();
   } catch {
-    // Ignore errors - optional auth
     next();
   }
-}
-
-/**
- * Set auth cookie
- */
-export function setAuthCookie(res: Response, token: string): void {
-  res.cookie('token', token, {
-    httpOnly: true,
-    secure: env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-  });
-}
-
-/**
- * Clear auth cookie
- */
-export function clearAuthCookie(res: Response): void {
-  res.clearCookie('token', {
-    httpOnly: true,
-    secure: env.NODE_ENV === 'production',
-    sameSite: 'lax',
-  });
 }

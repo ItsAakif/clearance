@@ -1,7 +1,14 @@
 // React Query hooks for Jobs, Tailor, Applications & BYOK keys.
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { jobsApi, tailorApi, applicationsApi, keysApi, profileApi, boardsApi, searchesApi } from '@/services/api';
-import type { ApiKey, CareerProfile, ParseProfileResponse, JobBoard, SavedSearch } from '@/services/api';
+import {
+  jobsApi, tailorApi, applicationsApi, keysApi, profileApi, boardsApi, searchesApi,
+  questionAnswersApi, alertsApi, aiApi
+} from '@/services/api';
+import type {
+  ApiKey, CareerProfile, ParseProfileResponse, JobBoard, SavedSearch,
+  QuestionAnswer, JobAlert, ApplicationEvent, ApplicationEventType,
+  ApplicationStatus, GenerateInterviewAnswerInput, InterviewAnswerCategory
+} from '@/services/api';
 import { toast } from './use-toast';
 
 // ==================== BYOK KEYS ====================
@@ -52,6 +59,22 @@ export function useEvaluateJob() {
   });
 }
 
+export function useCompareJobs() {
+  return useQuery({
+    queryKey: ['job-comparison'],
+    queryFn: () => {
+      const ids = (window as any).__compareJobIds || [];
+      if (ids.length < 2) throw new Error('Select at least 2 jobs to compare');
+      return jobsApi.compare(ids);
+    },
+    enabled: false,
+  });
+}
+
+export function setCompareJobIds(ids: string[]) {
+  (window as any).__compareJobIds = ids;
+}
+
 // ==================== TAILOR ====================
 export function useTailorResume() {
   return useMutation({
@@ -68,10 +91,18 @@ export function useApplications() {
   return useQuery({ queryKey: applicationsQueryKey, queryFn: () => applicationsApi.list() });
 }
 
+export function useApplication(id: string) {
+  return useQuery({
+    queryKey: ['applications', id],
+    queryFn: () => applicationsApi.get(id),
+    enabled: !!id,
+  });
+}
+
 export function useCreateApplication() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { jobListingId: string; tailoredResumeId?: string; status?: string; notes?: string }) =>
+    mutationFn: (vars: { jobListingId: string; tailoredResumeId?: string; status?: ApplicationStatus; notes?: string }) =>
       applicationsApi.create(vars),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: applicationsQueryKey });
@@ -84,10 +115,48 @@ export function useCreateApplication() {
 export function useUpdateApplication() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { id: string; status?: string; notes?: string; appliedAt?: string }) =>
-      applicationsApi.update(vars.id, { status: vars.status, notes: vars.notes, appliedAt: vars.appliedAt }),
+    mutationFn: (vars: { id: string; status?: ApplicationStatus; notes?: string; appliedAt?: string; followUpAt?: string; ghostedAt?: string; withdrawnAt?: string }) =>
+      applicationsApi.update(vars.id, { status: vars.status, notes: vars.notes, appliedAt: vars.appliedAt, followUpAt: vars.followUpAt, ghostedAt: vars.ghostedAt, withdrawnAt: vars.withdrawnAt }),
     onSuccess: () => qc.invalidateQueries({ queryKey: applicationsQueryKey }),
     onError: (e: Error) => toast({ title: 'Update failed', description: e.message, variant: 'destructive' }),
+  });
+}
+
+export function useApplicationEvents(applicationId: string) {
+  return useQuery({
+    queryKey: ['applications', applicationId, 'events'],
+    queryFn: () => applicationsApi.listEvents(applicationId),
+    enabled: !!applicationId,
+  });
+}
+
+export function useCreateApplicationEvent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { applicationId: string; type: ApplicationEventType; fromStatus?: string; toStatus?: string; title?: string; description?: string; scheduledAt?: string; completedAt?: string }) =>
+      applicationsApi.createEvent(vars.applicationId, vars),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['applications', vars.applicationId, 'events'] });
+      qc.invalidateQueries({ queryKey: applicationsQueryKey });
+    },
+    onError: (e: Error) => toast({ title: 'Failed to add event', description: e.message, variant: 'destructive' }),
+  });
+}
+
+export function useUpdateApplicationEvent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { applicationId: string; eventId: string; title?: string; description?: string; scheduledAt?: string | null; completedAt?: string | null }) =>
+      applicationsApi.updateEvent(vars.applicationId, vars.eventId, vars),
+    onSuccess: (_, vars) => qc.invalidateQueries({ queryKey: ['applications', vars.applicationId, 'events'] }),
+    onError: (e: Error) => toast({ title: 'Failed to update event', description: e.message, variant: 'destructive' }),
+  });
+}
+
+export function useGenerateInterviewAnswer() {
+  return useMutation({
+    mutationFn: (data: GenerateInterviewAnswerInput) => aiApi.generateInterviewAnswer(data),
+    onError: (e: Error) => toast({ title: 'AI answer generation failed', description: e.message, variant: 'destructive' }),
   });
 }
 
@@ -166,7 +235,7 @@ export function useSavedSearches() {
 export function useCreateSearch() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { name: string; query: string; location?: string; company?: string; boards?: string[] }) =>
+    mutationFn: (data: { name: string; query: string; location?: string; company?: string; boards?: string[]; minMatchScore?: number; remoteOnly?: boolean; sortBy?: string }) =>
       searchesApi.create(data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: searchesQueryKey });
@@ -192,5 +261,105 @@ export function useDeleteSearch() {
       toast({ title: 'Saved search removed' });
     },
     onError: (e: Error) => toast({ title: 'Failed to remove search', description: e.message, variant: 'destructive' }),
+  });
+}
+
+// ==================== QUESTION ANSWERS ====================
+export const questionAnswersQueryKey = ['question-answers'] as const;
+
+export function useQuestionAnswers(filters?: { category?: string; q?: string }) {
+  return useQuery({
+    queryKey: [...questionAnswersQueryKey, filters],
+    queryFn: () => questionAnswersApi.list(filters),
+  });
+}
+
+export function useCreateQuestionAnswer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { question: string; answer: string; category?: string; notes?: string; tags?: string[] }) =>
+      questionAnswersApi.create(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: questionAnswersQueryKey });
+      toast({ title: 'Q&A added' });
+    },
+    onError: (e: Error) => toast({ title: 'Failed to add Q&A', description: e.message, variant: 'destructive' }),
+  });
+}
+
+export function useUpdateQuestionAnswer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; question?: string; answer?: string; category?: string; notes?: string; tags?: string[] }) =>
+      questionAnswersApi.update(vars.id, vars),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: questionAnswersQueryKey });
+      toast({ title: 'Q&A updated' });
+    },
+    onError: (e: Error) => toast({ title: 'Failed to update Q&A', description: e.message, variant: 'destructive' }),
+  });
+}
+
+export function useDeleteQuestionAnswer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => questionAnswersApi.remove(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: questionAnswersQueryKey });
+      toast({ title: 'Q&A removed' });
+    },
+    onError: (e: Error) => toast({ title: 'Failed to remove Q&A', description: e.message, variant: 'destructive' }),
+  });
+}
+
+// ==================== JOB ALERTS ====================
+export const alertsQueryKey = ['alerts'] as const;
+
+export function useAlerts() {
+  return useQuery({ queryKey: alertsQueryKey, queryFn: () => alertsApi.list() });
+}
+
+export function useCreateAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { name: string; query: string; location?: string; sources?: string[]; savedSearchId?: string; minMatchScore?: number; remoteOnly?: boolean; isActive?: boolean; notifyInApp?: boolean; notifyEmail?: boolean }) =>
+      alertsApi.create(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: alertsQueryKey });
+      toast({ title: 'Alert created' });
+    },
+    onError: (e: Error) => toast({ title: 'Failed to create alert', description: e.message, variant: 'destructive' }),
+  });
+}
+
+export function useUpdateAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; name?: string; query?: string; location?: string; sources?: string[]; savedSearchId?: string; minMatchScore?: number; remoteOnly?: boolean; isActive?: boolean; notifyInApp?: boolean; notifyEmail?: boolean }) =>
+      alertsApi.update(vars.id, vars),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: alertsQueryKey });
+      toast({ title: 'Alert updated' });
+    },
+    onError: (e: Error) => toast({ title: 'Failed to update alert', description: e.message, variant: 'destructive' }),
+  });
+}
+
+export function useDeleteAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => alertsApi.remove(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: alertsQueryKey });
+      toast({ title: 'Alert removed' });
+    },
+    onError: (e: Error) => toast({ title: 'Failed to remove alert', description: e.message, variant: 'destructive' }),
+  });
+}
+
+export function useRunAlert() {
+  return useMutation({
+    mutationFn: (id: string) => alertsApi.run(id),
+    onError: (e: Error) => toast({ title: 'Alert run failed', description: e.message, variant: 'destructive' }),
   });
 }

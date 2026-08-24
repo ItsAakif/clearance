@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { chromium } from 'playwright';
 import { BadRequestError, handleApiError } from '../shared/errors.js';
+import { requireAuth } from '../middleware/auth.js';
 import HTMLtoDOCX from 'html-to-docx';
 
 const router = Router();
@@ -51,7 +52,7 @@ function parseExportRequest(req: Request): { html: string; documentName: string 
   };
 }
 
-router.post('/html-to-pdf', async (req: Request, res: Response) => {
+router.post('/html-to-pdf', requireAuth, async (req: Request, res: Response) => {
   try {
     const { html, documentName } = parseExportRequest(req);
 
@@ -78,7 +79,7 @@ router.post('/html-to-pdf', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/html-to-docx', async (req: Request, res: Response) => {
+router.post('/html-to-docx', requireAuth, async (req: Request, res: Response) => {
   try {
     const { html, documentName } = parseExportRequest(req);
     const buffer = await HTMLtoDOCX(html, null, {

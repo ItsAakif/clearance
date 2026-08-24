@@ -12,7 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Loader2, UserCog, Sparkles } from "lucide-react";
+import { Loader2, UserCog, Sparkles, Briefcase } from "lucide-react";
 import { useCareerProfile, useUpsertProfile, useParseProfile } from "@/hooks/useJobs";
 import type { CareerProfile } from "@/services/api";
 import { useResumes } from "@/hooks/useResumeApi";
@@ -130,13 +130,21 @@ export default function ProfilePage() {
   return (
     <AppLayout>
       <div className="flex h-full flex-col">
-        <header className="border-b border-border bg-card px-6 py-4">
-          <h1 className="flex items-center gap-2 text-lg font-semibold text-foreground">
-            <UserCog className="h-5 w-5" /> Career Profile
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Tell us about your targets so we can score and tailor jobs to you
-          </p>
+        <header className="border-b border-border bg-card px-4 py-4 sm:px-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+                <UserCog className="h-5 w-5" /> Career Profile
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Tell us about your targets so we can score and tailor jobs to you
+              </p>
+            </div>
+            <Button variant="outline" onClick={() => navigate('/app/jobs')} className="shrink-0">
+              <Briefcase className="mr-2 h-4 w-4" />
+              Discover jobs
+            </Button>
+          </div>
         </header>
 
         <div className="flex-1 overflow-auto">
@@ -319,7 +327,7 @@ export default function ProfilePage() {
               </div>
             )}
 
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <Button variant="outline" onClick={() => navigate('/app/jobs')}>
                 Cancel
               </Button>

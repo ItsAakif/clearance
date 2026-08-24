@@ -9,9 +9,57 @@ describe('API smoke checks', () => {
     expect(response.body.status).toBe('ok');
   });
 
-  it('rejects invalid auth signup payload', async () => {
-    const response = await request(app).post('/api/auth/signup').send({});
+  it('rejects login with missing password', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .set('Content-Type', 'application/json')
+      .send({});
     expect(response.status).toBe(400);
+  });
+
+  it('returns 404 for removed signup route', async () => {
+    const response = await request(app)
+      .post('/api/auth/signup')
+      .set('Content-Type', 'application/json')
+      .send({});
+    expect(response.status).toBe(404);
+  });
+
+  it('returns 404 for removed forgot-password route', async () => {
+    const response = await request(app)
+      .post('/api/auth/forgot-password')
+      .set('Content-Type', 'application/json')
+      .send({});
+    expect(response.status).toBe(404);
+  });
+
+  it('returns 404 for removed reset-password route', async () => {
+    const response = await request(app)
+      .post('/api/auth/reset-password')
+      .set('Content-Type', 'application/json')
+      .send({});
+    expect(response.status).toBe(404);
+  });
+
+  it('returns 404 for removed verify-email route', async () => {
+    const response = await request(app)
+      .post('/api/auth/verify-email')
+      .set('Content-Type', 'application/json')
+      .send({});
+    expect(response.status).toBe(404);
+  });
+
+  it('returns 404 for removed resend-verification route', async () => {
+    const response = await request(app)
+      .post('/api/auth/resend-verification')
+      .set('Content-Type', 'application/json')
+      .send({});
+    expect(response.status).toBe(404);
+  });
+
+  it('returns 404 for removed google route', async () => {
+    const response = await request(app).get('/api/auth/google');
+    expect(response.status).toBe(404);
   });
 
   it('blocks resume list when unauthenticated', async () => {
@@ -28,13 +76,12 @@ describe('API smoke checks', () => {
     expect(response.status).toBe(404);
   });
 
-  it('validates export payload before conversion', async () => {
+  it('blocks export when unauthenticated', async () => {
     const response = await request(app)
       .post('/api/export/html-to-docx')
       .set('Content-Type', 'application/json')
       .send({});
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toBe('html is required');
+    expect(response.status).toBe(401);
   });
 });

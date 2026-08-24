@@ -11,6 +11,9 @@ export interface JobListingSummary {
   applyUrl?: string;
   postedAt?: string;
   isActive: boolean;
+  skills?: string[];
+  workMode?: 'remote' | 'hybrid' | 'onsite' | string;
+  employmentType?: string;
 }
 
 export interface JobEvaluation {
@@ -29,6 +32,34 @@ export interface JobEvaluation {
   roleSummary?: string;
   reportJson: Record<string, unknown>;
   jobListing?: { title: string; company: string; applyUrl?: string };
+}
+
+export type JobSort = 'relevance' | 'matchScore' | 'newest';
+export type JobWorkMode = 'all' | 'remote' | 'hybrid' | 'onsite';
+
+export interface JobSearchFilters {
+  query: string;
+  minMatchScore?: number;
+  location?: string;
+  company?: string;
+  workMode: JobWorkMode;
+  sources: string[];
+  postedWithin: 'all' | 'day' | 'week' | 'month';
+  sortBy: JobSort;
+}
+
+export interface JobMatchBreakdown {
+  skills?: number;
+  experience?: number;
+  keywords?: number;
+  seniority?: number;
+}
+
+export interface NormalizedJobInsights {
+  keySkills: string[];
+  skillGaps: string[];
+  breakdown: JobMatchBreakdown;
+  evaluationResults: string[];
 }
 
 export interface TailoredResume {
@@ -166,13 +197,76 @@ export interface SavedSearch {
   location?: string;
   company?: string;
   boards?: string[];
+  minMatchScore?: number;
+  remoteOnly?: boolean;
+  sortBy?: string;
+  lastRunAt?: string;
+  matchCount?: number;
   createdAt?: string;
 }
 
 export const searchesApi = {
   list: () => apiClient.get<SavedSearch[]>('/searches'),
-  create: (data: { name: string; query: string; location?: string; company?: string; boards?: string[] }) =>
+  create: (data: { name: string; query: string; location?: string; company?: string; boards?: string[]; minMatchScore?: number; remoteOnly?: boolean; sortBy?: string }) =>
     apiClient.post<SavedSearch>('/searches', data),
+  update: (id: string, data: { name?: string; query?: string; location?: string; company?: string; boards?: string[]; minMatchScore?: number; remoteOnly?: boolean; sortBy?: string }) =>
+    apiClient.patch<SavedSearch>(`/searches/${id}`, data),
   remove: (id: string) => apiClient.delete(`/searches/${id}`),
   run: (id: string) => apiClient.post<JobListingSummary[]>(`/searches/${id}/run`, {}),
+};
+
+// ==================== QUESTION ANSWERS ====================
+export interface QuestionAnswerFilters {
+  category?: string;
+  q?: string;
+}
+
+export const questionAnswersApi = {
+  list: (filters?: QuestionAnswerFilters) => {
+    const params = new URLSearchParams();
+    if (filters?.category) params.set('category', filters.category);
+    if (filters?.q) params.set('q', filters.q);
+    const qs = params.toString();
+    return apiClient.get<QuestionAnswer[]>(`/question-answers${qs ? `?${qs}` : ''}`);
+  },
+  create: (payload: { question: string; answer: string; category?: string; notes?: string; tags?: string[] }) =>
+    apiClient.post<QuestionAnswer>('/question-answers', payload),
+  update: (id: string, payload: { question?: string; answer?: string; category?: string; notes?: string; tags?: string[] }) =>
+    apiClient.patch<QuestionAnswer>(`/question-answers/${id}`, payload),
+  remove: (id: string) => apiClient.delete(`/question-answers/${id}`),
+};
+
+// ==================== JOB ALERTS ====================
+export interface JobAlert {
+  id: string;
+  savedSearchId?: string | null;
+  name: string;
+  query: string;
+  location?: string | null;
+  sources?: string[] | null;
+  minMatchScore?: number | null;
+  remoteOnly: boolean;
+  isActive: boolean;
+  lastRunAt?: string | null;
+  lastMatchCount: number;
+  notifyInApp: boolean;
+  notifyEmail: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface JobComparisonItem extends JobListingSummary {
+  description: string;
+  expiresAt?: string;
+  lastVerifiedAt?: string;
+}
+
+export const alertsApi = {
+  list: () => apiClient.get<JobAlert[]>('/alerts'),
+  create: (payload: { name: string; query: string; location?: string; sources?: string[]; savedSearchId?: string; minMatchScore?: number; remoteOnly?: boolean; isActive?: boolean; notifyInApp?: boolean; notifyEmail?: boolean }) =>
+    apiClient.post<JobAlert>('/alerts', payload),
+  update: (id: string, payload: { name?: string; query?: string; location?: string; sources?: string[]; savedSearchId?: string; minMatchScore?: number; remoteOnly?: boolean; isActive?: boolean; notifyInApp?: boolean; notifyEmail?: boolean }) =>
+    apiClient.patch<JobAlert>(`/alerts/${id}`, payload),
+  remove: (id: string) => apiClient.delete(`/alerts/${id}`),
+  run: (id: string) => apiClient.post<{ matchCount: number; results: unknown[] }>(`/alerts/${id}/run`, {}),
 };

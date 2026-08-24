@@ -13,6 +13,7 @@ import {
   Clock,
   Search,
   Loader2,
+  Briefcase,
 } from "lucide-react";
 import { AppLayout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
@@ -327,6 +328,15 @@ export default function ResumesPage() {
                   <Card
                     className="group relative overflow-hidden transition-all hover:shadow-lg hover:-translate-y-0.5 cursor-pointer"
                     onClick={() => navigate(`/app/build/${resume.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        navigate(`/app/build/${resume.id}`);
+                      }
+                    }}
+                    tabIndex={0}
+                    role="link"
+                    aria-label={`${resume.name}: open in builder`}
                   >
                     {/* Preview thumbnail */}
                     <div className="aspect-[8.5/6] bg-secondary/30 border-b border-border p-4">
@@ -369,6 +379,19 @@ export default function ResumesPage() {
                             {!!resume.variants?.length && (
                               <Badge variant="outline">{resume.variants.length} variants</Badge>
                             )}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void navigate(`/app/match?resumeId=${encodeURIComponent(resume.id)}`);
+                              }}
+                              onKeyDown={(event) => event.stopPropagation()}
+                            >
+                              <Briefcase className="mr-1 h-3 w-3" />
+                              Find matching jobs
+                            </Button>
                           </div>
                           {!!resume.variants?.length && (
                             <div className="mt-3 space-y-2">

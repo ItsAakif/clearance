@@ -4,7 +4,7 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import routes from './routes/index.js';
-import { env, getAllowRegistration } from './config/env.js';
+import { env } from './config/env.js';
 
 const app = express();
 
@@ -45,7 +45,7 @@ const generalLimiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 5,
   message: { error: 'Too many login attempts. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -53,24 +53,12 @@ const authLimiter = rateLimit({
 
 app.use('/api', generalLimiter);
 app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/signup', authLimiter);
-app.use('/api/auth/forgot-password', authLimiter);
 
 app.use('/api/previews', express.static(path.join(__dirname, '../previews')));
 app.use('/api', routes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// Public instance config (no auth) - lets the client show signup/registration state.
-app.get('/api/config', (_req, res) => {
-  res.json({
-    allowRegistration: getAllowRegistration(),
-    oauth: {
-      google: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
-    },
-  });
 });
 
 app.use((req, res) => {

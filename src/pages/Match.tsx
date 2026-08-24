@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { AppLayout } from "@/components/layout";
 import { JobMatchResults } from "@/features/job-match";
 import { Button } from "@/components/ui/button";
@@ -33,15 +33,27 @@ interface MatchResult {
 
 export default function MatchPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [jobDescription, setJobDescription] = useState("");
   const [selectedResumeId, setSelectedResumeId] = useState("");
   const [selectedUploadedFileId, setSelectedUploadedFileId] = useState("");
   const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isBuilding, setIsBuilding] = useState(false);
-  
+  const initializedRef = useRef(false);
+
   const { data: resumes = [], isLoading: loadingResumes } = useResumes();
   const { toast } = useToast();
+
+  // Initialize selectedResumeId from query param once resumes are loaded
+  useEffect(() => {
+    if (initializedRef.current) return;
+    const qResumeId = searchParams.get("resumeId");
+    if (qResumeId && resumes.some((r) => r.id === qResumeId)) {
+      setSelectedResumeId(qResumeId);
+    }
+    initializedRef.current = true;
+  }, [searchParams, resumes]);
 
   // Raw uploaded files (PDF/DOCX/TXT) - stored for Job Match only, never parsed
   // into builder resumes and never shown in "My Resumes".
@@ -150,6 +162,11 @@ export default function MatchPage() {
           <p className="text-sm text-muted-foreground">
             Compare your resume against a job description
           </p>
+          {searchParams.get("resumeId") && resumes.some((r) => r.id === searchParams.get("resumeId")) && (
+            <p className="mt-1 text-xs text-muted-foreground" aria-live="polite">
+              Opened with a pre-selected resume from your library.
+            </p>
+          )}
         </header>
 
         {/* Content */}

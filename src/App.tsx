@@ -22,8 +22,10 @@ const Profile = lazy(() => import("./pages/Profile"));
 const ATSScan = lazy(() => import("./pages/ATSScan"));
 const ATSHistory = lazy(() => import("./pages/ATSHistory"));
 const Resumes = lazy(() => import("./pages/Resumes"));
-const Auth = lazy(() => import("./pages/Auth"));
+const QABank = lazy(() => import("./pages/QABank"));
 const Admin = lazy(() => import("./pages/Admin"));
+const QuestionAnswers = lazy(() => import("./pages/QuestionAnswers"));
+const Auth = lazy(() => import("./pages/Auth"));
 const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const VerifyEmail = lazy(() => import("./pages/VerifyEmail"));
@@ -105,6 +107,16 @@ const App = () => (
               <Route path="/app/applications" element={
                 <ProtectedRoute>
                   <Applications />
+                </ProtectedRoute>
+              } />
+              <Route path="/app/qa-bank" element={
+                <ProtectedRoute>
+                  <QABank />
+                </ProtectedRoute>
+              } />
+              <Route path="/app/qa" element={
+                <ProtectedRoute>
+                  <QuestionAnswers />
                 </ProtectedRoute>
               } />
               <Route path="/app/settings" element={

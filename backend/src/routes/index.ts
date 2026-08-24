@@ -17,6 +17,8 @@ import profileRoutes from './profile.js';
 import boardsRoutes from './boards.js';
 import searchesRoutes from './saved-searches.js';
 import uploadedFilesRoutes from './uploaded-files.js';
+import jobAlertsRoutes from './job-alerts.js';
+import questionAnswersRoutes from './question-answers.js';
 
 const router = Router();
 
@@ -36,5 +38,7 @@ router.use('/profile', profileRoutes);
 router.use('/boards', boardsRoutes);
 router.use('/searches', searchesRoutes);
 router.use('/uploaded-files', uploadedFilesRoutes);
+router.use('/job-alerts', jobAlertsRoutes);
+router.use('/question-answers', questionAnswersRoutes);
 
 export default router;

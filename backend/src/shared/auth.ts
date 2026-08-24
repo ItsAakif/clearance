@@ -8,7 +8,6 @@ type AuthContext = {
     id: string;
     email: string;
     isAdmin?: boolean;
-    emailVerified?: boolean;
   };
 };
 
@@ -17,7 +16,6 @@ type SanitizableUser = {
   email: string;
   name: string | null;
   avatarUrl: string | null;
-  emailVerified: boolean;
   createdAt: Date;
 };
 
@@ -33,16 +31,13 @@ export async function ensureOwnership(
   if (!currentUserId) {
     throw new UnauthorizedError('Authentication required');
   }
-  
+
   if (currentUserId !== resourceUserId) {
-    // Log unauthorized access attempt (without sensitive data)
     logSecurityEvent('unauthorized_access', {
       attemptedResourceType: resourceType,
-      // Never log the actual user IDs in production for privacy
-      // Just log that an attempt was made
-      event: 'cross-user-access-attempt'
+      event: 'cross-user-access-attempt',
     });
-    
+
     throw new ForbiddenError('Access denied');
   }
 }
@@ -66,16 +61,14 @@ export function sanitizeUser(user: SanitizableUser, isAdmin = false): Record<str
     email,
     name,
     avatarUrl,
-    emailVerified,
-    createdAt
+    createdAt,
   } = user;
-  
+
   return {
     id,
     email,
     name,
     avatarUrl,
-    emailVerified,
     createdAt,
     isAdmin,
   };

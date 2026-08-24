@@ -9,8 +9,10 @@ const ALGO = 'aes-256-gcm';
 const IV_LENGTH = 12;
 
 function getSecret(): Buffer {
-  const secret = process.env.KEY_ENCRYPTION_SECRET || env.JWT_SECRET;
-  // Derive a stable 32-byte key from the secret
+  const secret = process.env.KEY_ENCRYPTION_SECRET;
+  if (!secret) {
+    throw new Error('KEY_ENCRYPTION_SECRET is required for API key encryption');
+  }
   return crypto.createHash('sha256').update(secret).digest();
 }
 

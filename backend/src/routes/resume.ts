@@ -487,7 +487,7 @@ router.get('/:id/ats-reports', requireAuth, async (req, res) => {
 });
 
 // ==================== EXPORT DOCX FROM DYNAMIC DATA (no auth required for preview) ====================
-router.post('/export/docx-preview', async (req, res) => {
+router.post('/export/docx-preview', requireAuth, async (req, res) => {
   try {
     const { templateId, sections } = req.body;
     
@@ -524,7 +524,7 @@ router.post('/export/docx-preview', async (req, res) => {
 });
 
 // ==================== EXPORT PDF FROM DYNAMIC DATA (no auth required for preview) ====================
-router.post('/export/pdf-preview', async (req, res) => {
+router.post('/export/pdf-preview', requireAuth, async (req, res) => {
   try {
     const { sections } = req.body;
     

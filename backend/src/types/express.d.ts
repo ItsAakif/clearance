@@ -4,7 +4,6 @@ declare module 'express-serve-static-core' {
       id: string;
       email: string;
       isAdmin?: boolean;
-      emailVerified?: boolean;
     };
   }
 }

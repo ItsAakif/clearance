@@ -51,7 +51,7 @@ export function TailorPanel({ jobId, resumeId, evaluationId, jobDescription, def
     <Card className="p-6">
       <div className="mb-4 flex items-center gap-2">
         <Wand2 className="h-5 w-5 text-muted-foreground" />
-        <h2 className="font-semibold text-foreground">Tailor to Template</h2>
+        <h2 className="font-semibold text-foreground">Tailor Resume to This Job</h2>
       </div>
       <p className="mb-4 text-sm text-muted-foreground">
         Rewrites your resume to mirror the job description and renders it with your chosen template.
@@ -67,7 +67,7 @@ export function TailorPanel({ jobId, resumeId, evaluationId, jobDescription, def
         />
         <Button onClick={handleTailor} disabled={tailor.isPending}>
           {tailor.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
-          Tailor Resume
+          Tailor resume to this job
         </Button>
       </div>
 

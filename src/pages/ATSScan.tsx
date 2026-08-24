@@ -1,11 +1,12 @@
 import { useCallback, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload,
   AlertCircle,
   Sparkles,
   History,
+  Briefcase,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -359,6 +360,12 @@ export default function ATSScanPage() {
               )}
 
               <div className="flex flex-col justify-center gap-4 sm:flex-row">
+                <Button size="lg" asChild>
+                  <Link to={result.resumeId ? `/app/match?resumeId=${encodeURIComponent(result.resumeId)}` : "/app/match"}>
+                    <Briefcase className="mr-2 h-5 w-5" />
+                    Find matching jobs
+                  </Link>
+                </Button>
                 <Button size="lg" onClick={() => navigate("/app/ats-history")}>
                   <History className="mr-2 h-5 w-5" />
                   Past Scans

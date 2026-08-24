@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import {
   ArrowLeft,
   FileText,
@@ -7,6 +7,7 @@ import {
   Trash2,
   ExternalLink,
   Calendar,
+  Briefcase,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -161,7 +162,12 @@ export default function ATSHistoryPage() {
               )}
 
               {selected.resumeId && (
-                <div className="mt-6 flex justify-center">
+                <div className="mt-6 flex flex-wrap justify-center gap-3">
+                  <Button asChild>
+                    <Link to={`/app/match?resumeId=${encodeURIComponent(selected.resumeId)}`}>
+                      <Briefcase className="mr-2 h-4 w-4" /> Find matching jobs
+                    </Link>
+                  </Button>
                   <Button onClick={() => navigate(`/app/build/${selected.resumeId}`)}>
                     <ExternalLink className="mr-2 h-4 w-4" /> Open in Editor
                   </Button>
@@ -184,7 +190,7 @@ export default function ATSHistoryPage() {
               All your saved ATS scans and scores
             </p>
           </div>
-          <Button variant="outline" onClick={() => navigate("/ats-scan")}>
+          <Button variant="outline" onClick={() => navigate("/app/ats-scan")}>
             <ScanSearch className="mr-2 h-4 w-4" /> New Scan
           </Button>
         </header>
@@ -197,9 +203,9 @@ export default function ATSHistoryPage() {
               <Card className="p-10 text-center">
                 <FileText className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
                 <p className="text-muted-foreground">No scans yet.</p>
-                <Button className="mt-4" onClick={() => navigate("/ats-scan")}>
-                  Run your first ATS scan
-                </Button>
+                 <Button className="mt-4" onClick={() => navigate("/app/ats-scan")}>
+                   Run your first ATS scan
+                 </Button>
               </Card>
             ) : (
               <div className="space-y-3">
