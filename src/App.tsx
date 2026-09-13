@@ -26,9 +26,6 @@ const QABank = lazy(() => import("./pages/QABank"));
 const Admin = lazy(() => import("./pages/Admin"));
 const QuestionAnswers = lazy(() => import("./pages/QuestionAnswers"));
 const Auth = lazy(() => import("./pages/Auth"));
-const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
-const ResetPassword = lazy(() => import("./pages/ResetPassword"));
-const VerifyEmail = lazy(() => import("./pages/VerifyEmail"));
 const Terms = lazy(() => import("./pages/Terms"));
 const Privacy = lazy(() => import("./pages/Privacy"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -56,10 +53,7 @@ const App = () => (
               <Route path="/get-started/ai" element={<AIBuild />} />
               <Route path="/get-started/ai-build" element={<AIBuild />} />
               <Route path="/auth" element={<Auth />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/verify-email" element={<VerifyEmail />} />
-              <Route path="/terms" element={<Terms />} />
+                                                        <Route path="/terms" element={<Terms />} />
               <Route path="/privacy" element={<Privacy />} />
               
               {/* Protected routes - require authentication */}

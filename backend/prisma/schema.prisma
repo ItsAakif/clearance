@@ -25,16 +25,16 @@ model Session {
 
 // ==================== USER & AUTH ====================
 model UploadedFile {
-  id         String   @id @default(uuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  fileName   String
-  fileType   String
-  fileBytes  Bytes
+  fileName      String
+  fileType      String
+  fileBytes     Bytes
   extractedText String @default("")
 
-  createdAt  DateTime @default(now())
+  createdAt DateTime @default(now())
 
   jobMatches JobMatch[]
 
@@ -42,107 +42,109 @@ model UploadedFile {
 }
 
 model User {
-  id                     String    @id @default(uuid())
-  email                  String    @unique
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  id        String   @id @default(uuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  name                   String?
-  avatarUrl              String?
+  name      String?
+  avatarUrl String?
 
-  sessions               Session[]
+  sessions Session[]
 
-  resumes                Resume[]
-  uploadedFiles          UploadedFile[]
-  atsReports             ATSReport[]
-  jobMatches             JobMatch[]
-  apiKeys               AIProviderKey[]
-  jobEvaluations        JobEvaluation[]
-  tailoredResumes       TailoredResume[]
-  applications          Application[]
-  careerProfile         CareerProfile?
-  jobBoards             JobBoard[]
-  savedSearches         SavedSearch[]
+  resumes         Resume[]
+  uploadedFiles   UploadedFile[]
+  atsReports      ATSReport[]
+  jobMatches      JobMatch[]
+  apiKeys         AIProviderKey[]
+  jobEvaluations  JobEvaluation[]
+  tailoredResumes TailoredResume[]
+  applications    Application[]
+  careerProfile   CareerProfile?
+  jobBoards       JobBoard[]
+  savedSearches   SavedSearch[]
+  questionAnswers QuestionAnswer[]
+  jobAlerts       JobAlert[]
 }
 
 // ==================== RESUME ====================
 model Resume {
-  id               String    @id @default(uuid())
-  userId           String
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  name             String    @default("Untitled Resume")
+  name String @default("Untitled Resume")
 
-  personalInfo     Json
-  summary          String    @default("")
-  experience       Json      @default("[]")
-  education        Json      @default("[]")
-  skills           Json      @default("[]")
-  projects         Json?
-  languages        Json?
+  personalInfo Json
+  summary      String @default("")
+  experience   Json   @default("[]")
+  education    Json   @default("[]")
+  skills       Json   @default("[]")
+  projects     Json?
+  languages    Json?
 
-  sections         Json      @default("[]")
+  sections Json @default("[]")
 
-  templateId       String    @default("classic")
-  templateSettings Json      @default("{\"marginX\": 0.75, \"marginY\": 0.75, \"fontSize\": 11, \"lineSpacing\": 1.4, \"sectionSpacing\": 1.5}")
+  templateId       String @default("classic")
+  templateSettings Json   @default("{\"marginX\": 0.75, \"marginY\": 0.75, \"fontSize\": 11, \"lineSpacing\": 1.4, \"sectionSpacing\": 1.5}")
 
-  isArchived       Boolean  @default(false)
-  lastATSScore     Int?
+  isArchived   Boolean @default(false)
+  lastATSScore Int?
 
   originalFile     Bytes?
   originalFileType String?
 
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  variants         ResumeVariant[]
-  atsReports       ATSReport[]
-  jobMatches       JobMatch[]
+  variants   ResumeVariant[]
+  atsReports ATSReport[]
+  jobMatches JobMatch[]
 
   @@index([userId])
 }
 
 model ResumeVariant {
-  id         String   @id @default(uuid())
-  resumeId   String
-  resume     Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  id       String @id @default(uuid())
+  resumeId String
+  resume   Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 
-  name       String
-  targetJob  String?
+  name      String
+  targetJob String?
 
   summary    String?
   experience Json?
   skills     Json?
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([resumeId])
 }
 
 // ==================== ATS SCANNING ====================
 model ATSReport {
-  id              String   @id @default(uuid())
-  resumeId        String?
-  resume          Resume?  @relation(fields: [resumeId], references: [id], onDelete: Cascade)
-  userId          String?
-  user            User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id       String  @id @default(uuid())
+  resumeId String?
+  resume   Resume? @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  userId   String?
+  user     User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  overallScore    Int
-  status          String
+  overallScore Int
+  status       String
 
-  categories      Json
-  keywords        Json
-  formatting      Json
+  categories Json
+  keywords   Json
+  formatting Json
 
-  evaluationJson  Json?
-  scoredBy        String?
+  evaluationJson Json?
+  scoredBy       String?
 
-  isPublicScan    Boolean  @default(false)
+  isPublicScan     Boolean @default(false)
   uploadedFileHash String?
-  fileName        String?
+  fileName         String?
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([resumeId])
   @@index([userId])
@@ -150,29 +152,29 @@ model ATSReport {
 
 // ==================== JOB MATCHING ====================
 model JobMatch {
-  id              String   @id @default(uuid())
-  resumeId        String?
-  resume          Resume?  @relation(fields: [resumeId], references: [id], onDelete: Cascade)
-  uploadedFileId  String?
-  uploadedFile    UploadedFile? @relation(fields: [uploadedFileId], references: [id], onDelete: Cascade)
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String        @id @default(uuid())
+  resumeId       String?
+  resume         Resume?       @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  uploadedFileId String?
+  uploadedFile   UploadedFile? @relation(fields: [uploadedFileId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  jobDescription  String   @db.Text
-  jobTitle        String?
+  jobDescription String  @db.Text
+  jobTitle       String?
 
   matchScore      Int
   matchedKeywords Json
   missingKeywords Json
   suggestions     Json
 
-  detectedRole    String?
-  criticalMissing Json
+  detectedRole     String?
+  criticalMissing  Json
   preferredMissing Json
-  roleSuggestions Json
-  tailoringTips  Json
+  roleSuggestions  Json
+  tailoringTips    Json
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([resumeId])
   @@index([userId])
@@ -180,120 +182,137 @@ model JobMatch {
 
 // ==================== TEMPLATES ====================
 model Template {
-  id              String   @id
+  id              String  @id
   name            String
   description     String
   category        String
-  isAtsOptimized  Boolean  @default(true)
+  isAtsOptimized  Boolean @default(true)
   defaultSettings Json
-  isActive        Boolean  @default(true)
+  isActive        Boolean @default(true)
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 }
 
 // ==================== CAREER PROFILE & JOB BOARDS ====================
 model CareerProfile {
-  id          String   @id @default(uuid())
-  userId      String   @unique
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  targetRoles   Json?
-  seniority     String?
-  minSalary     Int?
-  maxSalary     Int?
-  currency      String?  @default("USD")
-  locationPref  String?
-  remoteOnly    Boolean  @default(false)
-  topSkills     Json?
-  industries    Json?
-  redFlags      Json?
-  proofPoints   Json?
-  summary       String?
+  targetRoles        Json?
+  seniority          String?
+  minSalary          Int?
+  maxSalary          Int?
+  currency           String? @default("USD")
+  locationPref       String?
+  remoteOnly         Boolean @default(false)
+  topSkills          Json?
+  industries         Json?
+  redFlags           Json?
+  proofPoints        Json?
+  summary            String?
   parsedFromResumeId String?
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model JobBoard {
-  id          String   @id @default(uuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type        String
-  name        String
-  boardId     String?
-  feedUrl     String?
-  searchQuery String?
-  searchSite  String?
-  scraperProvider String?
-  scraperLocation String?
-  scraperResults  Int?
-  scraperUseProxy Boolean? @default(false)
+  id                 String           @id @default(uuid())
+  userId             String
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type               String
+  name               String
+  boardId            String?
+  feedUrl            String?
+  searchQuery        String?
+  searchSite         String?
+  scraperProvider    String?
+  scraperLocation    String?
+  scraperResults     Int?
+  scraperUseProxy    Boolean?         @default(false)
   aggregatorProvider String?
   aggregatorLocation String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  isActive           Boolean          @default(true)
+  sourceHealth       JobSourceHealth?
+  createdAt          DateTime         @default(now())
 
   @@index([userId])
 }
 
+model JobSourceHealth {
+  id                  String    @id @default(uuid())
+  jobBoardId          String    @unique
+  jobBoard            JobBoard  @relation(fields: [jobBoardId], references: [id], onDelete: Cascade)
+  status              String    @default("unknown")
+  consecutiveFailures Int       @default(0)
+  lastRunAt           DateTime?
+  lastSuccessAt       DateTime?
+  lastFailureAt       DateTime?
+  lastError           String?   @db.Text
+  lastResultCount     Int       @default(0)
+  lastLatencyMs       Int?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
 model SavedSearch {
-  id          String   @id @default(uuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name        String
-  query       String
-  location    String?
-  company     String?
-  sources     Json?
-  minMatchScore Integer?
-  remoteOnly  Boolean  @default(false)
-  sortBy      String  @default('relevance')
-  lastRunAt   DateTime?
-  matchCount  Int     @default(0)
-  createdAt   DateTime @default(now())
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  query         String
+  location      String?
+  company       String?
+  sources       Json?
+  minMatchScore Int?
+  remoteOnly    Boolean   @default(false)
+  sortBy        String    @default("relevance")
+  lastRunAt     DateTime?
+  matchCount    Int       @default(0)
+  createdAt     DateTime  @default(now())
 
   @@index([userId])
 }
 
 model AIProviderKey {
-  id               String    @id @default(uuid())
-  userId           String?
-  user             User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  provider         String
-  apiKey           String
-  label            String?
+  id       String  @id @default(uuid())
+  userId   String?
+  user     User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider String
+  apiKey   String
+  label    String?
 
-  isActive         Boolean  @default(true)
+  isActive         Boolean   @default(true)
   lastUsedAt       DateTime?
   lastValidatedAt  DateTime?
-  failureCount     Int      @default(0)
+  failureCount     Int       @default(0)
   rateLimitedUntil DateTime?
 
-  createdAt        DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([userId, provider])
 }
 
 // ==================== JOB DISCOVERY & TRACKING ====================
 model JobListing {
-  id            String   @id @default(uuid())
-  externalId    String?
-  source        String
-  sourceUrl     String
-  title         String
-  company       String
-  location      String?
-  description   String   @db.Text
-  applyUrl      String?
-  postedAt      DateTime?
-  expiresAt     DateTime?
-  isActive      Boolean  @default(true)
+  id             String    @id @default(uuid())
+  externalId     String?
+  source         String
+  sourceUrl      String
+  title          String
+  company        String
+  location       String?
+  description    String    @db.Text
+  applyUrl       String?
+  postedAt       DateTime?
+  expiresAt      DateTime?
+  isActive       Boolean   @default(true)
   lastVerifiedAt DateTime?
-  createdAt     DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
-  evaluations   JobEvaluation[]
-  applications  Application[]
+  evaluations  JobEvaluation[]
+  applications Application[]
 
   @@unique([source, externalId])
   @@index([company])
@@ -301,35 +320,35 @@ model JobListing {
 }
 
 model JobEvaluation {
-  id            String   @id @default(uuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  jobListingId  String
-  jobListing    JobListing @relation(fields: [jobListingId], references: [id], onDelete: Cascade)
-  resumeId      String?
+  id           String     @id @default(uuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobListingId String
+  jobListing   JobListing @relation(fields: [jobListingId], references: [id], onDelete: Cascade)
+  resumeId     String?
 
-  roleSummary         String?
-  cvMatchScore        Float?
-  levelFitScore       Float?
-  compFitScore        Float?
+  roleSummary          String?
+  cvMatchScore         Float?
+  levelFitScore        Float?
+  compFitScore         Float?
   personalizationScore Float?
-  interviewPrepScore  Float?
-  legitimacyScore     Float?
-  overallScore        Float
-  recommendation      String?
-  isScam              Boolean  @default(false)
-  reportJson          Json?
+  interviewPrepScore   Float?
+  legitimacyScore      Float?
+  overallScore         Float
+  recommendation       String?
+  isScam               Boolean @default(false)
+  reportJson           Json?
 
   tailoredResumes TailoredResume[]
-  createdAt       DateTime @default(now())
+  createdAt       DateTime         @default(now())
 
   @@index([userId, createdAt])
 }
 
 model TailoredResume {
-  id              String   @id @default(uuid())
+  id              String         @id @default(uuid())
   userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   jobEvaluationId String?
   jobEvaluation   JobEvaluation? @relation(fields: [jobEvaluationId], references: [id], onDelete: SetNull)
   sourceResumeId  String
@@ -337,37 +356,37 @@ model TailoredResume {
   jobListingId    String?
   title           String
   content         Json
-  html            String?  @db.Text
-  createdAt       DateTime @default(now())
+  html            String?        @db.Text
+  createdAt       DateTime       @default(now())
 
-  applications    Application[]
+  applications Application[]
 
   @@index([userId, createdAt])
 }
 
 model Application {
-  id              String   @id @default(uuid())
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  jobListingId    String
-  jobListing      JobListing @relation(fields: [jobListingId], references: [id], onDelete: Cascade)
+  id               String          @id @default(uuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobListingId     String
+  jobListing       JobListing      @relation(fields: [jobListingId], references: [id], onDelete: Cascade)
   tailoredResumeId String?
-  tailoredResume  TailoredResume? @relation(fields: [tailoredResumeId], references: [id], onDelete: SetNull)
-  status          String   @default("saved")
-  notes           String?
-  followUpAt      DateTime?
-  ghostedAt       DateTime?
-  withdrawnAt     DateTime?
-  appliedAt       DateTime?
-  createdAt       DateTime @default(now())
+  tailoredResume   TailoredResume? @relation(fields: [tailoredResumeId], references: [id], onDelete: SetNull)
+  status           String          @default("saved")
+  notes            String?
+  followUpAt       DateTime?
+  ghostedAt        DateTime?
+  withdrawnAt      DateTime?
+  appliedAt        DateTime?
+  createdAt        DateTime        @default(now())
 
-  events          ApplicationEvent[]
+  events ApplicationEvent[]
 
   @@index([userId, status])
 }
 
 model ApplicationEvent {
-  id            String   @id @default(uuid())
+  id            String      @id @default(uuid())
   applicationId String
   application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   type          String
@@ -377,7 +396,7 @@ model ApplicationEvent {
   description   String?
   scheduledAt   DateTime?
   completedAt   DateTime?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime    @default(now())
 
   @@index([applicationId])
   @@index([scheduledAt])
@@ -385,23 +404,23 @@ model ApplicationEvent {
 
 // ==================== JOB ALERTS ====================
 model JobAlert {
-  id            String   @id @default(uuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  savedSearchId String?
-  name          String
-  query         String
-  location      String?
-  sources       Json?
-  minMatchScore Int?
-  remoteOnly    Boolean  @default(false)
-  isActive      Boolean  @default(true)
-  lastRunAt     DateTime?
-  lastMatchCount Int    @default(0)
-  notifyInApp   Boolean  @default(true)
-  notifyEmail   Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String    @id @default(uuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  savedSearchId  String?
+  name           String
+  query          String
+  location       String?
+  sources        Json?
+  minMatchScore  Int?
+  remoteOnly     Boolean   @default(false)
+  isActive       Boolean   @default(true)
+  lastRunAt      DateTime?
+  lastMatchCount Int       @default(0)
+  notifyInApp    Boolean   @default(true)
+  notifyEmail    Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([userId])
   @@index([isActive, lastRunAt])

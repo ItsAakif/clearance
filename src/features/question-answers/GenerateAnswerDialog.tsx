@@ -79,7 +79,7 @@ export function GenerateAnswerDialog({ open, onOpenChange, jobs, onUseAnswer }: 
             <Select value={jobId} onValueChange={setJobId}>
               <SelectTrigger id="gen-job"><SelectValue placeholder="No specific job" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">No specific job</SelectItem>
+                <SelectItem value="none">No specific job</SelectItem>
                 {jobs.map((j) => (
                   <SelectItem key={j.id} value={j.id}>{j.jobListing?.title} - {j.jobListing?.company}</SelectItem>
                 ))}

@@ -159,12 +159,12 @@ export default function QABankPage() {
               aria-label="Search Q&A entries"
             />
           </div>
-          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <Select value={categoryFilter || "all"} onValueChange={(v) => setCategoryFilter(v === "all" ? "" : v)}>
             <SelectTrigger className="w-[180px]" aria-label="Filter by category">
               <SelectValue placeholder="All categories" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All categories</SelectItem>
+              <SelectItem value="all">All categories</SelectItem>
               {CATEGORIES.map((c) => (
                 <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>
               ))}
@@ -269,12 +269,12 @@ export default function QABankPage() {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <Label htmlFor="qa-category">Category</Label>
-                  <Select value={form.category} onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}>
+                  <Select value={form.category || "none"} onValueChange={(v) => setForm((f) => ({ ...f, category: v === "none" ? "" : v }))}>
                     <SelectTrigger id="qa-category" className="mt-1">
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
                       {CATEGORIES.map((c) => (
                         <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>
                       ))}
