@@ -2,13 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  User,
-  Mail,
   LogOut,
   Loader2,
   AlertCircle,
-  MailWarning,
-  ShieldCheck,
   KeyRound,
   Trash2,
   CheckCircle2,
@@ -51,7 +47,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { useAuth, useDeleteAccount, useLogout, useResendVerificationEmail, useUpdateProfile } from "@/hooks/useAuth";
+import { useDeleteAccount, useLogout } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useApiKeys, useCreateApiKey, useDeleteApiKey } from "@/hooks/useJobs";
 import type { ApiKey } from "@/services/api";
@@ -737,15 +733,9 @@ function AiProvidersCard() {
 
 export default function SettingsPage() {
   const navigate = useNavigate();
-  const { user, isLoading: authLoading } = useAuth();
   const logoutMutation = useLogout();
   const deleteAccountMutation = useDeleteAccount();
-  const updateProfileMutation = useUpdateProfile();
-  const resendVerificationMutation = useResendVerificationEmail();
   const { toast } = useToast();
-
-  const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [editName, setEditName] = useState("");
 
   // BYOK (Bring Your Own Keys)
   const { data: apiKeys = [] } = useApiKeys();
@@ -782,20 +772,9 @@ export default function SettingsPage() {
     navigate("/");
   };
 
-  const handleSaveProfile = async () => {
-    if (!editName.trim()) return;
-    await updateProfileMutation.mutateAsync({ name: editName });
-    setIsEditingProfile(false);
-  };
-
   const handleDeleteAccount = async () => {
     await deleteAccountMutation.mutateAsync();
     navigate("/");
-  };
-
-  const openEditProfile = () => {
-    setEditName(user?.name || "");
-    setIsEditingProfile(true);
   };
 
   return (
@@ -812,81 +791,6 @@ export default function SettingsPage() {
         {/* Content */}
         <div className="flex-1 overflow-auto">
           <div className="mx-auto max-w-2xl space-y-6 p-6">
-            {/* Profile Card */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0 }}
-            >
-              <Card className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="font-semibold text-foreground">Profile</h2>
-                  <Button variant="ghost" size="sm" onClick={openEditProfile}>
-                    Edit
-                  </Button>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  {/* Avatar */}
-                  <div className="relative">
-                    {user?.avatarUrl ? (
-                      <img
-                        src={user.avatarUrl}
-                        alt={user.name || "Avatar"}
-                        className="h-16 w-16 rounded-full object-cover ring-2 ring-primary/20"
-                      />
-                    ) : (
-                      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-primary/40 ring-2 ring-primary/20">
-                        <User className="h-8 w-8 text-primary" />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* User info */}
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium text-foreground">
-                        {user?.name || "No name set"}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-                      <Mail className="h-3.5 w-3.5" />
-                      <span>{user?.email}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Member since {user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : "N/A"}
-                    </p>
-                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                      {user?.emailVerified ? (
-                        <Badge variant="secondary" className="gap-1 bg-success/10 text-success">
-                          <ShieldCheck className="h-3.5 w-3.5" />
-                          Email verified
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary" className="gap-1 bg-warning/10 text-warning">
-                          <MailWarning className="h-3.5 w-3.5" />
-                          Verification pending
-                        </Badge>
-                      )}
-                      {!user?.emailVerified && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => resendVerificationMutation.mutate()}
-                          disabled={resendVerificationMutation.isPending}
-                        >
-                          {resendVerificationMutation.isPending ? (
-                            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                          ) : null}
-                          Resend verification email
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            </motion.div>
-
             {/* API Keys (BYOK) */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -1168,56 +1072,6 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
-
-      {/* Edit Profile Dialog */}
-      <Dialog open={isEditingProfile} onOpenChange={setIsEditingProfile}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Profile</DialogTitle>
-            <DialogDescription>
-              Update your profile information
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4 space-y-4">
-            <div className="grid gap-2">
-              <Label htmlFor="edit-name">Name</Label>
-              <Input
-                id="edit-name"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                placeholder="Your name"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="edit-email">Email</Label>
-              <Input
-                id="edit-email"
-                type="email"
-                value={user?.email || ""}
-                disabled
-                className="bg-muted"
-              />
-              <p className="text-xs text-muted-foreground">
-                Email cannot be changed
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditingProfile(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveProfile}
-              disabled={updateProfileMutation.isPending || !editName.trim()}
-            >
-              {updateProfileMutation.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
     </AppLayout>
   );
