@@ -6,8 +6,31 @@ import prisma from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { handleApiError, ForbiddenError, BadRequestError } from '../shared/errors.js';
 import { generateResumeFromInput, improveResumeBullet, generateProfessionalSummary, buildResumeFromJobDescription, AIGuidedInput } from '../ai/resumeGenerator.js';
+import { generateInterviewAnswer } from '../ai/interviewGenerator.js';
 
 const router = Router();
+
+/**
+ * AI routes surface actionable, secret-free errors instead of a generic 500:
+ * - no LLM key configured -> 503 with setup hint (message contains no secrets)
+ * - invalid/retired model -> 502 naming provider + model
+ * Everything else keeps the default minimal-error handling.
+ */
+function handleAiRouteError(error: unknown, res: Parameters<typeof handleApiError>[1]): void {
+  if (error instanceof Error) {
+    if (/api keys? configured/i.test(error.message)) {
+      console.error(`[${new Date().toISOString()}] [503] ${error.message}`);
+      res.status(503).json({ error: error.message });
+      return;
+    }
+    if (error.name === 'LlmModelError') {
+      console.error(`[${new Date().toISOString()}] [502] ${error.message}`);
+      res.status(502).json({ error: error.message });
+      return;
+    }
+  }
+  handleApiError(error, res);
+}
 
 // ==================== AI RESUME GENERATION ====================
 
@@ -54,7 +77,7 @@ router.post('/generate-resume', requireAuth, async (req, res) => {
       createdAt: resume.createdAt
     });
   } catch (error) {
-    handleApiError(error, res);
+    handleAiRouteError(error, res);
   }
 });
 
@@ -140,7 +163,7 @@ router.post('/build-from-jd', requireAuth, async (req, res) => {
       createdAt: created.createdAt,
     });
   } catch (error) {
-    handleApiError(error, res);
+    handleAiRouteError(error, res);
   }
 });
 
@@ -158,7 +181,7 @@ router.post('/improve-bullet', requireAuth, async (req, res) => {
     
     res.json({ improved });
   } catch (error) {
-    handleApiError(error, res);
+    handleAiRouteError(error, res);
   }
 });
 
@@ -182,7 +205,56 @@ router.post('/generate-summary', requireAuth, async (req, res) => {
     
     res.json({ summary });
   } catch (error) {
-    handleApiError(error, res);
+    handleAiRouteError(error, res);
+  }
+});
+
+// ==================== INTERVIEW ANSWER ====================
+// Frontend Q&A dialog (aiApi.generateInterviewAnswer) posts here; the
+// service existed but no route was wired, so generation 404'd.
+
+router.post('/generate-interview-answer', requireAuth, async (req, res) => {
+  try {
+    const { question, category, jobTitle, jobDescription, jobListingId } = req.body as {
+      question?: string;
+      category?: string;
+      jobTitle?: string;
+      jobDescription?: string;
+      jobListingId?: string;
+    };
+
+    if (!question || !question.trim()) {
+      throw new BadRequestError('An interview question is required');
+    }
+
+    const validCategories = ['behavioral', 'technical', 'situational', 'general'] as const;
+    const safeCategory = validCategories.includes(category as (typeof validCategories)[number])
+      ? (category as (typeof validCategories)[number])
+      : undefined;
+
+    // The Q&A dialog passes an Application id as jobListingId; resolve the
+    // linked job listing for answer context. Unknown ids fall back to generic.
+    let title = jobTitle;
+    let description = jobDescription;
+    if ((!title || !description) && jobListingId) {
+      const app = await prisma.application.findFirst({
+        where: { id: String(jobListingId), userId: req.user!.id },
+        include: { jobListing: true },
+      });
+      title = title || app?.jobListing?.title;
+      description = description || app?.jobListing?.description;
+    }
+
+    const answer = await generateInterviewAnswer({
+      question,
+      category: safeCategory,
+      jobTitle: title,
+      jobDescription: description,
+    });
+
+    res.json({ answer });
+  } catch (error) {
+    handleAiRouteError(error, res);
   }
 });
 

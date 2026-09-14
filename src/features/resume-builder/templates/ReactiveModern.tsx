@@ -7,8 +7,8 @@ export function ReactiveModern(props: TemplateProps) {
 
 export const reactiveModernInfo = {
   id: 'reactive-modern',
-  name: 'Reactive Modern',
-  description: 'Reactive Resume-inspired modern layout: left-aligned teal accent bar with clean section headings.',
+  name: 'Modern Teal',
+  description: 'Modern layout: left-aligned teal accent bar with clean section headings.',
   category: 'modern' as const,
   isAtsOptimized: true,
 };

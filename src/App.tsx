@@ -50,8 +50,16 @@ const App = () => (
               {/* Public routes */}
               <Route path="/" element={<Index />} />
               <Route path="/get-started" element={<GetStarted />} />
-              <Route path="/get-started/ai" element={<AIBuild />} />
-              <Route path="/get-started/ai-build" element={<AIBuild />} />
+              <Route path="/get-started/ai" element={
+                <ProtectedRoute>
+                  <AIBuild />
+                </ProtectedRoute>
+              } />
+              <Route path="/get-started/ai-build" element={
+                <ProtectedRoute>
+                  <AIBuild />
+                </ProtectedRoute>
+              } />
               <Route path="/auth" element={<Auth />} />
                                                         <Route path="/terms" element={<Terms />} />
               <Route path="/privacy" element={<Privacy />} />

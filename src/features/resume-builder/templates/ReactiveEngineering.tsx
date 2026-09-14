@@ -7,8 +7,8 @@ export function ReactiveEngineering(props: TemplateProps) {
 
 export const reactiveEngineeringInfo = {
   id: 'reactive-engineering',
-  name: 'Reactive Engineering',
-  description: 'Reactive Resume-inspired engineering layout: compact, monospace bullets, blue accent for technical roles.',
+  name: 'Technical Compact',
+  description: 'Engineering layout: compact, monospace bullets, blue accent for technical roles.',
   category: 'professional' as const,
   isAtsOptimized: true,
 };

@@ -7,8 +7,8 @@ export function ReactiveClassic(props: TemplateProps) {
 
 export const reactiveClassicInfo = {
   id: 'reactive-classic',
-  name: 'Reactive Classic',
-  description: 'Reactive Resume-inspired classic layout: centered navy header with uppercase section titles.',
+  name: 'Classic Navy',
+  description: 'Classic layout: centered navy header with uppercase section titles.',
   category: 'classic' as const,
   isAtsOptimized: true,
 };

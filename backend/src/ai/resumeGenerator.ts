@@ -40,20 +40,62 @@ export interface GeneratedResume {
   };
   summary: string;
   experience: Array<{
+    id: string;
     title: string;
     company: string;
     location: string;
     startDate: string;
     endDate: string;
+    description: string;
     bullets: string[];
   }>;
   education: Array<{
+    id: string;
     degree: string;
     field: string;
     institution: string;
     graduationYear: string;
   }>;
   skills: string[];
+}
+
+/**
+ * Normalize raw LLM JSON into the shape the frontend builder expects.
+ * The editor keys entries by `id` (update/remove) and renders
+ * `description`, so entries without ids break per-item editing.
+ */
+function normalizeGeneratedResume(raw: Partial<GeneratedResume> & Record<string, any>): GeneratedResume {
+  const experience = (Array.isArray(raw.experience) ? raw.experience : []).map((e: any, i: number) => ({
+    id: typeof e?.id === 'string' && e.id ? e.id : `exp-${i + 1}`,
+    title: String(e?.title || ''),
+    company: String(e?.company || ''),
+    location: String(e?.location || ''),
+    startDate: String(e?.startDate || ''),
+    endDate: String(e?.endDate || ''),
+    description: String(e?.description || ''),
+    bullets: Array.isArray(e?.bullets) ? e.bullets.map((b: unknown) => String(b)) : [],
+  }));
+  const education = (Array.isArray(raw.education) ? raw.education : []).map((e: any, i: number) => ({
+    id: typeof e?.id === 'string' && e.id ? e.id : `edu-${i + 1}`,
+    degree: String(e?.degree || ''),
+    field: String(e?.field || ''),
+    institution: String(e?.institution || ''),
+    // Older tailor prompt used `year`; accept both.
+    graduationYear: String(e?.graduationYear ?? e?.year ?? ''),
+  }));
+  return {
+    name: String(raw.name || ''),
+    personalInfo: {
+      fullName: String(raw.personalInfo?.fullName || ''),
+      email: String(raw.personalInfo?.email || ''),
+      phone: String(raw.personalInfo?.phone || ''),
+      location: String(raw.personalInfo?.location || ''),
+    },
+    summary: String((raw as any).summary || ''),
+    experience,
+    education,
+    skills: Array.isArray(raw.skills) ? raw.skills.map((s: unknown) => String(s)) : [],
+  };
 }
 
 // ==================== LLM CLIENT ====================
@@ -183,7 +225,7 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT.`;
         throw new Error('AI response did not contain valid JSON');
       }
       
-      const resume = JSON.parse(jsonMatch[0]) as GeneratedResume;
+      const resume = normalizeGeneratedResume(JSON.parse(jsonMatch[0]));
       
       // Validate required fields
       if (!resume.summary || !resume.experience || !resume.skills) {
@@ -391,7 +433,7 @@ Return ONLY valid JSON matching this schema:
 {
   "summary": string,
   "experience": [{ "title": string, "company": string, "startDate": string, "endDate": string, "bullets": string[] }],
-  "education": [{ "degree": string, "field": string, "institution": string, "year": string }],
+  "education": [{ "degree": string, "field": string, "institution": string, "graduationYear": string }],
   "skills": string[]
 }`;
 
@@ -416,6 +458,7 @@ Return ONLY valid JSON matching this schema:
       });
 
       const parsed = JSON.parse(content) as Partial<GeneratedResume>;
+      const normalized = normalizeGeneratedResume(parsed);
       return {
         name: '',
         personalInfo: {
@@ -424,10 +467,10 @@ Return ONLY valid JSON matching this schema:
           phone: base.personalInfo?.phone || '',
           location: base.personalInfo?.location || '',
         },
-        summary: parsed.summary || base.summary || '',
-        experience: Array.isArray(parsed.experience) ? parsed.experience : (base.experience as any) || [],
-        education: Array.isArray(parsed.education) ? parsed.education : (base.education as any) || [],
-        skills: Array.isArray(parsed.skills) && parsed.skills.length ? parsed.skills : (base.skills || []),
+        summary: normalized.summary || base.summary || '',
+        experience: normalized.experience.length ? normalized.experience : (base.experience as any) || [],
+        education: normalized.education.length ? normalized.education : (base.education as any) || [],
+        skills: normalized.skills.length ? normalized.skills : (base.skills || []),
       };
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
