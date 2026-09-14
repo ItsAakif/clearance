@@ -105,7 +105,7 @@ export const jobMatchSchema = z.object({
 });
 
 // ==================== API KEY (BYOK) SCHEMAS ====================
-export const apiKeyProviderSchema = z.enum(['openai', 'groq', 'openrouter', 'gemini', 'tavily', 'exa']);
+export const apiKeyProviderSchema = z.enum(['openai', 'groq', 'openrouter', 'gemini', 'tavily', 'exa', 'firecrawl', 'crawl4ai', 'rapidapi', 'adzuna', 'jooble', 'careerjet']);
 export const createApiKeySchema = z.object({
   provider: apiKeyProviderSchema,
   apiKey: z.string().min(8, 'API key too short').max(500, 'API key too long'),

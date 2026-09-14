@@ -1,5 +1,9 @@
 // AES encryption for BYOK API keys at rest
 // Keys are encrypted with AES-256-GCM using a key derived from KEY_ENCRYPTION_SECRET.
+// When KEY_ENCRYPTION_SECRET is unset, a stable fallback is derived via SHA-256 of
+// 'clearance-key:' + env.CLEARANCE_ACCESS_PASSWORD (stable across restarts).
+// NOTE: changing CLEARANCE_ACCESS_PASSWORD orphans keys encrypted under the derived
+// secret — set an explicit KEY_ENCRYPTION_SECRET for stability.
 // Per security.md: never log plaintext keys.
 
 import crypto from 'crypto';
@@ -9,11 +13,11 @@ const ALGO = 'aes-256-gcm';
 const IV_LENGTH = 12;
 
 function getSecret(): Buffer {
-  const secret = process.env.KEY_ENCRYPTION_SECRET;
-  if (!secret) {
-    throw new Error('KEY_ENCRYPTION_SECRET is required for API key encryption');
+  const secret = env.KEY_ENCRYPTION_SECRET;
+  if (secret) {
+    return crypto.createHash('sha256').update(secret).digest();
   }
-  return crypto.createHash('sha256').update(secret).digest();
+  return crypto.createHash('sha256').update(`clearance-key:${env.CLEARANCE_ACCESS_PASSWORD}`).digest();
 }
 
 export function encryptSecret(plaintext: string): string {

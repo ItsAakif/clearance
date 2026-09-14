@@ -137,7 +137,7 @@ export interface UpdateApplicationEventInput {
 
 export interface ApiKey {
   id: string;
-  provider: 'openai' | 'groq' | 'openrouter' | 'gemini' | 'tavily' | 'adzuna' | 'jooble' | 'careerjet' | 'firecrawl' | 'crawl4ai' | 'rapidapi';
+  provider: 'openai' | 'groq' | 'openrouter' | 'gemini' | 'tavily' | 'exa' | 'adzuna' | 'jooble' | 'careerjet' | 'firecrawl' | 'crawl4ai' | 'rapidapi';
   label?: string;
   maskedKey: string;
   isActive: boolean;
