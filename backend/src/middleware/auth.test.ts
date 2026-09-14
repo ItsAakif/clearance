@@ -32,11 +32,16 @@ vi.mock('../lib/prisma.js', () => ({
 }));
 
 // Mock env
+const { adminEmailSet } = vi.hoisted(() => ({
+  adminEmailSet: new Set<string>(['admin@example.com']),
+}));
+
 vi.mock('../config/env.js', () => ({
   env: {
     NODE_ENV: 'test',
     CLEARANCE_ACCESS_PASSWORD: 'test-access-password',
   },
+  getAdminEmails: () => adminEmailSet,
 }));
 
 function createMockReq(cookies: Record<string, string> = {}): Partial<Request> {
@@ -64,6 +69,8 @@ function createMockRes(): { res: Partial<Response>; setStatus: (s: number) => vo
 describe('middleware/auth', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    adminEmailSet.clear();
+    adminEmailSet.add('admin@example.com');
   });
 
   describe('hashSessionToken', () => {
@@ -128,7 +135,7 @@ describe('middleware/auth', () => {
       expect(next).not.toHaveBeenCalled();
     });
 
-    it('populates req.user and calls next for a valid session', async () => {
+    it('populates req.user with isAdmin:false for a non-admin session', async () => {
       const tokenHash = hashSessionToken('valid-token');
       mockFindUnique.mockResolvedValue({
         tokenHash,
@@ -140,7 +147,21 @@ describe('middleware/auth', () => {
       const next = vi.fn() as NextFunction;
 
       await requireAuth(req, res as Response, next);
-      expect(req.user).toEqual({ id: 'user-1', email: 'test@example.com', isAdmin: true });
+      expect(req.user).toEqual({ id: 'user-1', email: 'test@example.com', isAdmin: false });
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('populates req.user with isAdmin:true for an ADMIN_EMAILS member (case-insensitive)', async () => {
+      mockFindUnique.mockResolvedValue({
+        user: { id: 'admin-1', email: 'Admin@Example.com' },
+        expiresAt: new Date(Date.now() + 86400000),
+      });
+      const req = createMockReq({ clearance_session: 'admin-token' }) as Request;
+      const { res } = createMockRes();
+      const next = vi.fn() as NextFunction;
+
+      await requireAuth(req, res as Response, next);
+      expect(req.user).toEqual({ id: 'admin-1', email: 'Admin@Example.com', isAdmin: true });
       expect(next).toHaveBeenCalled();
     });
 
@@ -168,7 +189,7 @@ describe('middleware/auth', () => {
       expect(req.user).toBeUndefined();
     });
 
-    it('populates user for valid session', async () => {
+    it('populates non-admin user for valid session', async () => {
       mockFindUnique.mockResolvedValue({
         user: { id: 'user-1', email: 'test@example.com' },
         expiresAt: new Date(Date.now() + 86400000),
@@ -178,7 +199,21 @@ describe('middleware/auth', () => {
       const next = vi.fn() as NextFunction;
 
       await optionalAuth(req, res as Response, next);
-      expect(req.user).toEqual({ id: 'user-1', email: 'test@example.com', isAdmin: true });
+      expect(req.user).toEqual({ id: 'user-1', email: 'test@example.com', isAdmin: false });
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('populates admin user for ADMIN_EMAILS member', async () => {
+      mockFindUnique.mockResolvedValue({
+        user: { id: 'admin-1', email: 'admin@example.com' },
+        expiresAt: new Date(Date.now() + 86400000),
+      });
+      const req = createMockReq({ clearance_session: 'admin-token' }) as Request;
+      const { res } = createMockRes();
+      const next = vi.fn() as NextFunction;
+
+      await optionalAuth(req, res as Response, next);
+      expect(req.user).toEqual({ id: 'admin-1', email: 'admin@example.com', isAdmin: true });
       expect(next).toHaveBeenCalled();
     });
 

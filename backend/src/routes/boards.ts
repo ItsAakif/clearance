@@ -11,7 +11,7 @@ import { SUPPORTED_SCRAPER_PROVIDERS } from '../jobSources/index.js';
 const createSchema = z.object({
   type: z.enum([
     'greenhouse', 'ashby', 'lever', 'workday', 'rss', 'json', 'search',
-    'smartrecruiters', 'recruitee', 'personio', 'jobicy', 'hnalgolia', 'scraper',
+    'smartrecruiters', 'recruitee', 'personio', 'jobicy', 'hnalgolia', 'scraper', 'aggregator',
   ]),
   name: z.string().min(1, 'Name required').max(100),
   boardId: z.string().max(200).optional(),
@@ -23,14 +23,12 @@ const createSchema = z.object({
   scraperLocation: z.string().max(100).optional(),
   scraperResults: z.number().int().min(1).max(100).optional(),
   scraperUseProxy: z.boolean().optional(),
+  // aggregator-type extras
+  aggregatorProvider: z.string().max(50).optional(),
+  aggregatorLocation: z.string().max(100).optional(),
   isActive: z.boolean().optional(),
 });
-const updateSchema = createSchema.partial().extend({
-  scraperProvider: z.string().max(50).optional(),
-  scraperLocation: z.string().max(100).optional(),
-  scraperResults: z.number().int().min(1).max(100).optional(),
-  scraperUseProxy: z.boolean().optional(),
-});
+const updateSchema = createSchema.partial();
 
 const router = Router();
 
@@ -38,7 +36,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
     // Lazy-seed defaults for users with no boards yet
     await seedDefaultBoardsForUser(req.user!.id);
-    const boards = await prisma.jobBoard.findMany({ where: { userId: req.user!.id }, orderBy: { createdAt: 'desc' } });
+    const boards = await prisma.jobBoard.findMany({ where: { userId: req.user!.id }, orderBy: { createdAt: 'desc' }, include: { sourceHealth: true } });
     res.json(boards);
   } catch (error) {
     handleApiError(error, res);
@@ -53,6 +51,7 @@ function explainScrapability(input: {
   boardId?: string | null;
   searchQuery?: string | null;
   scraperProvider?: string | null;
+  aggregatorProvider?: string | null;
 }): { scrapable: boolean; via: string; reason: string } {
   const { type, feedUrl, boardId, searchQuery, scraperProvider } = input;
 
@@ -100,6 +99,11 @@ function explainScrapability(input: {
       reason: `"${scraperProvider}" is not a supported scraper. Supported: ${SUPPORTED_SCRAPER_PROVIDERS.join(', ')}.`,
     };
   }
+  if (type === 'aggregator') {
+    return scraperProvider || (input as { aggregatorProvider?: string | null }).aggregatorProvider
+      ? { scrapable: true, via: 'aggregator', reason: 'Fetched from the aggregator API (Adzuna/Careerjet/Jooble) using your BYOK key.' }
+      : { scrapable: false, via: 'aggregator', reason: 'Requires an aggregatorProvider (adzuna, careerjet, or jooble).' };
+  }
   return { scrapable: false, via: 'unsupported', reason: `Unknown board type "${type}".` };
 }
 
@@ -117,7 +121,8 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const {
       type, name, boardId, feedUrl, searchQuery, searchSite,
-      scraperProvider, scraperLocation, scraperResults, scraperUseProxy, isActive,
+      scraperProvider, scraperLocation, scraperResults, scraperUseProxy,
+      aggregatorProvider, aggregatorLocation, isActive,
     } = validateInput(createSchema, req.body);
     if ((type === 'rss' || type === 'workday' || type === 'json') && !feedUrl) {
       return res.status(400).json({ error: 'feedUrl is required for rss/workday/json boards' });
@@ -136,6 +141,9 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
         error: `Unsupported scraperProvider "${scraperProvider}". Supported: ${SUPPORTED_SCRAPER_PROVIDERS.join(', ')}.`,
       });
     }
+    if (type === 'aggregator' && !aggregatorProvider) {
+      return res.status(400).json({ error: 'aggregatorProvider is required for aggregator boards' });
+    }
     const board = await prisma.jobBoard.create({
       data: {
         userId: req.user!.id,
@@ -147,6 +155,8 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
         scraperLocation: scraperLocation || null,
         scraperResults: scraperResults ?? null,
         scraperUseProxy: scraperUseProxy ?? false,
+        aggregatorProvider: aggregatorProvider || null,
+        aggregatorLocation: aggregatorLocation || null,
         name,
         type,
         isActive: isActive ?? true,
@@ -158,11 +168,26 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+router.get('/:id/health', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const board = await prisma.jobBoard.findUnique({
+      where: { id: req.params.id },
+      include: { sourceHealth: true },
+    });
+    if (!board) throw new NotFoundError('Job Board');
+    if (board.userId !== req.user!.id) return res.status(403).json({ error: 'Forbidden' });
+    res.json(board.sourceHealth ?? { status: 'unknown', consecutiveFailures: 0, lastResultCount: 0 });
+  } catch (error) {
+    handleApiError(error, res);
+  }
+});
+
 router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const {
       type, name, boardId, feedUrl, searchQuery, searchSite,
-      scraperProvider, scraperLocation, scraperResults, scraperUseProxy, isActive,
+      scraperProvider, scraperLocation, scraperResults, scraperUseProxy,
+      aggregatorProvider, aggregatorLocation, isActive,
     } = validateInput(updateSchema, req.body);
     const board = await prisma.jobBoard.findUnique({ where: { id: req.params.id } });
     if (!board) throw new NotFoundError('Job Board');
@@ -180,6 +205,8 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
         ...(scraperLocation !== undefined ? { scraperLocation: scraperLocation || null } : {}),
         ...(scraperResults !== undefined ? { scraperResults } : {}),
         ...(scraperUseProxy !== undefined ? { scraperUseProxy } : {}),
+        ...(aggregatorProvider !== undefined ? { aggregatorProvider: aggregatorProvider || null } : {}),
+        ...(aggregatorLocation !== undefined ? { aggregatorLocation: aggregatorLocation || null } : {}),
         ...(isActive !== undefined ? { isActive } : {}),
       },
     });

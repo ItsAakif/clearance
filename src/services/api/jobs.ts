@@ -71,14 +71,68 @@ export interface TailoredResume {
   html?: string;
 }
 
+export type ApplicationStatus =
+  | 'saved' | 'tailored' | 'applied' | 'interview' | 'offer' | 'rejected' | 'withdrawn' | 'ghosted';
+
+export type ApplicationEventType =
+  | 'status_change' | 'note_added' | 'follow_up' | 'interview_scheduled' | 'offer_received' | 'rejected' | 'withdrawn';
+
+export interface ApplicationMatchSummary {
+  overallScore: number;
+  evaluatedAt: string;
+}
+
+export interface ApplicationJobListing {
+  title: string;
+  company: string;
+  location?: string | null;
+  description?: string;
+  applyUrl?: string | null;
+  match?: ApplicationMatchSummary | null;
+}
+
 export interface Application {
   id: string;
-  status: 'saved' | 'tailored' | 'applied' | 'interview' | 'offer' | 'rejected';
-  notes?: string;
-  appliedAt?: string;
+  status: ApplicationStatus;
+  notes?: string | null;
+  appliedAt?: string | null;
+  followUpAt?: string | null;
+  ghostedAt?: string | null;
+  withdrawnAt?: string | null;
   createdAt: string;
-  jobListing?: { title: string; company: string; applyUrl?: string };
-  tailoredResume?: { id: string; title: string; templateId: string };
+  jobListingId?: string;
+  jobListing?: ApplicationJobListing | null;
+  tailoredResume?: { id: string; title: string; templateId: string } | null;
+}
+
+export interface ApplicationEvent {
+  id: string;
+  applicationId: string;
+  type: string;
+  fromStatus?: string | null;
+  toStatus?: string | null;
+  title?: string | null;
+  description?: string | null;
+  scheduledAt?: string | null;
+  completedAt?: string | null;
+  createdAt: string;
+}
+
+export interface CreateApplicationEventInput {
+  type: ApplicationEventType;
+  fromStatus?: string;
+  toStatus?: string;
+  title?: string;
+  description?: string;
+  scheduledAt?: string;
+  completedAt?: string;
+}
+
+export interface UpdateApplicationEventInput {
+  title?: string | null;
+  description?: string | null;
+  scheduledAt?: string | null;
+  completedAt?: string | null;
 }
 
 export interface ApiKey {
@@ -110,7 +164,7 @@ export const tailorApi = {
     apiClient.post<TailoredResume>('/tailor', payload),
   list: () => apiClient.get<TailoredResume[]>('/tailor'),
   export: (id: string, format: 'pdf' | 'docx') =>
-    apiClient.downloadPost(`/tailor/${id}/export?format=${format}`, {}),
+    apiClient.download(`/tailor/${id}/export?format=${format}`),
 };
 
 // ==================== APPLICATIONS ====================
@@ -118,9 +172,16 @@ export const applicationsApi = {
   create: (payload: { jobListingId: string; tailoredResumeId?: string; status?: string; notes?: string }) =>
     apiClient.post<Application>('/applications', payload),
   list: () => apiClient.get<Application[]>('/applications'),
-  update: (id: string, payload: { status?: string; notes?: string; appliedAt?: string }) =>
+  get: (id: string) => apiClient.get<Application>(`/applications/${id}`),
+  update: (id: string, payload: { status?: string; notes?: string; appliedAt?: string; followUpAt?: string | null; ghostedAt?: string | null; withdrawnAt?: string | null }) =>
     apiClient.patch<Application>(`/applications/${id}`, payload),
   remove: (id: string) => apiClient.delete(`/applications/${id}`),
+  listEvents: (applicationId: string) =>
+    apiClient.get<ApplicationEvent[]>(`/applications/${applicationId}/events`),
+  createEvent: (applicationId: string, payload: CreateApplicationEventInput) =>
+    apiClient.post<ApplicationEvent>(`/applications/${applicationId}/events`, payload),
+  updateEvent: (applicationId: string, eventId: string, payload: UpdateApplicationEventInput) =>
+    apiClient.patch<ApplicationEvent>(`/applications/${applicationId}/events/${eventId}`, payload),
 };
 
 // ==================== BYOK KEYS ====================
@@ -164,23 +225,51 @@ export const profileApi = {
 };
 
 // ==================== JOB BOARDS ====================
+export type JobBoardType =
+  | 'greenhouse' | 'ashby' | 'lever' | 'workday' | 'rss' | 'json' | 'search'
+  | 'smartrecruiters' | 'recruitee' | 'personio' | 'jobicy' | 'hnalgolia' | 'scraper' | 'aggregator';
+
 export interface JobBoard {
   id: string;
   userId?: string;
-  type: 'greenhouse' | 'ashby' | 'lever' | 'workday' | 'rss';
+  type: JobBoardType;
   name: string;
-  boardId?: string;
-  feedUrl?: string;
+  boardId?: string | null;
+  feedUrl?: string | null;
+  searchQuery?: string | null;
+  searchSite?: string | null;
+  scraperProvider?: string | null;
+  scraperLocation?: string | null;
+  scraperResults?: number | null;
+  scraperUseProxy?: boolean;
+  aggregatorProvider?: string | null;
+  aggregatorLocation?: string | null;
   isActive?: boolean;
   lastScannedAt?: string;
   createdAt?: string;
 }
 
+export interface JobBoardCreateInput {
+  type: JobBoardType;
+  name: string;
+  boardId?: string;
+  feedUrl?: string;
+  searchQuery?: string;
+  searchSite?: string;
+  scraperProvider?: string;
+  scraperLocation?: string;
+  scraperResults?: number;
+  scraperUseProxy?: boolean;
+  aggregatorProvider?: string;
+  aggregatorLocation?: string;
+  isActive?: boolean;
+}
+
 export const boardsApi = {
   list: () => apiClient.get<JobBoard[]>('/boards'),
-  create: (data: { type: JobBoard['type']; name: string; boardId?: string; feedUrl?: string; isActive?: boolean }) =>
+  create: (data: JobBoardCreateInput) =>
     apiClient.post<JobBoard>('/boards', data),
-  update: (id: string, data: Partial<{ type: JobBoard['type']; name: string; boardId?: string; feedUrl?: string; isActive?: boolean }>) =>
+  update: (id: string, data: Partial<JobBoardCreateInput>) =>
     apiClient.patch<JobBoard>(`/boards/${id}`, data),
   remove: (id: string) => apiClient.delete(`/boards/${id}`),
   scan: (query?: string, boardIds?: string[]) =>
@@ -262,11 +351,11 @@ export interface JobComparisonItem extends JobListingSummary {
 }
 
 export const alertsApi = {
-  list: () => apiClient.get<JobAlert[]>('/alerts'),
+  list: () => apiClient.get<JobAlert[]>('/job-alerts'),
   create: (payload: { name: string; query: string; location?: string; sources?: string[]; savedSearchId?: string; minMatchScore?: number; remoteOnly?: boolean; isActive?: boolean; notifyInApp?: boolean; notifyEmail?: boolean }) =>
-    apiClient.post<JobAlert>('/alerts', payload),
+    apiClient.post<JobAlert>('/job-alerts', payload),
   update: (id: string, payload: { name?: string; query?: string; location?: string; sources?: string[]; savedSearchId?: string; minMatchScore?: number; remoteOnly?: boolean; isActive?: boolean; notifyInApp?: boolean; notifyEmail?: boolean }) =>
-    apiClient.patch<JobAlert>(`/alerts/${id}`, payload),
-  remove: (id: string) => apiClient.delete(`/alerts/${id}`),
-  run: (id: string) => apiClient.post<{ matchCount: number; results: unknown[] }>(`/alerts/${id}/run`, {}),
+    apiClient.patch<JobAlert>(`/job-alerts/${id}`, payload),
+  remove: (id: string) => apiClient.delete(`/job-alerts/${id}`),
+  run: (id: string) => apiClient.post<{ matchCount: number; results: unknown[] }>(`/job-alerts/${id}/run`, {}),
 };

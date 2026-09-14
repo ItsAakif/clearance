@@ -7,11 +7,42 @@ import { requireAuth } from '../middleware/auth.js';
 import { handleApiError, NotFoundError } from '../shared/errors.js';
 import { ensureOwnership } from '../shared/auth.js';
 import { validateInput, jobSearchSchema, evaluateJobSchema } from '../shared/validation.js';
-import { runSource, boardToConfig, type JobSourceConfig } from '../jobSources/index.js';
+import { runSource, boardToConfig, type JobSourceConfig, type RawJob } from '../jobSources/index.js';
+import { recordSourceSuccess, recordSourceFailure } from '../jobSources/sourceHealth.js';
+import { dedupeJobs, withDeterministicExternalId } from '../jobSources/jobIdentity.js';
 import { checkLiveness } from '../jobSources/liveness.js';
 import { evaluateJob } from '../ai/evaluation.js';
 
 const router = Router();
+
+/**
+ * Upsert flattened, deduped source results into JobListing.
+ * Every job is guaranteed a deterministic externalId so repeated scans
+ * update the same row instead of creating duplicates.
+ */
+export async function upsertDiscoveredJobs(jobs: RawJob[]) {
+  const upserted = [];
+  for (const job of jobs) {
+    const withId = job.externalId ? job : withDeterministicExternalId(job);
+    const rec = await prisma.jobListing.upsert({
+      where: { source_externalId: { source: withId.source, externalId: withId.externalId! } },
+      update: { title: withId.title, company: withId.company, location: withId.location, description: withId.description, applyUrl: withId.applyUrl, sourceUrl: withId.sourceUrl, postedAt: withId.postedAt },
+      create: {
+        source: withId.source,
+        externalId: withId.externalId,
+        sourceUrl: withId.sourceUrl,
+        title: withId.title,
+        company: withId.company,
+        location: withId.location,
+        description: withId.description,
+        applyUrl: withId.applyUrl,
+        postedAt: withId.postedAt,
+      },
+    });
+    upserted.push(rec);
+  }
+  return upserted;
+}
 
 // ==================== SEARCH JOBS (user boards + filters) ====================
 router.get('/search', requireAuth, async (req: Request, res: Response) => {
@@ -32,32 +63,32 @@ router.get('/search', requireAuth, async (req: Request, res: Response) => {
       userId: req.user!.id,
     }));
 
-    const results = (await Promise.all(configs.map((c) => runSource(c).catch(() => [])))).flat()
+    const results = dedupeJobs((await Promise.all(boards.map(async (b, i) => {
+      const c = configs[i];
+      const startedAt = Date.now();
+      try {
+        const jobs = await runSource(c);
+        const latencyMs = Date.now() - startedAt;
+        try {
+          await recordSourceSuccess(b.id, jobs.length, latencyMs);
+        } catch {
+          // Health writes must never fail the request (sourceHealth also swallows errors).
+        }
+        return jobs;
+      } catch (error) {
+        const latencyMs = Date.now() - startedAt;
+        try {
+          await recordSourceFailure(b.id, error, latencyMs);
+        } catch {
+          // Health writes must never fail the request (sourceHealth also swallows errors).
+        }
+        return [];
+      }
+    }))).flat())
       .filter((job) => !company || (job.company || '').toLowerCase().includes(company.toLowerCase()))
       .filter((job) => !sourceTypes || sourceTypes.includes(job.source));
 
-    const upserted = [];
-    for (const job of results.slice(0, limit)) {
-      const existing = job.externalId
-        ? await prisma.jobListing.findUnique({ where: { source_externalId: { source: job.source, externalId: job.externalId } } }).catch(() => null)
-        : null;
-      const rec = await prisma.jobListing.upsert({
-        where: existing ? { id: existing.id } : { source_externalId: { source: job.source, externalId: job.externalId || `manual-${Date.now()}-${Math.random()}` } },
-        update: { title: job.title, company: job.company, location: job.location, description: job.description, applyUrl: job.applyUrl, sourceUrl: job.sourceUrl, postedAt: job.postedAt },
-        create: {
-          source: job.source,
-          externalId: job.externalId,
-          sourceUrl: job.sourceUrl,
-          title: job.title,
-          company: job.company,
-          location: job.location,
-          description: job.description,
-          applyUrl: job.applyUrl,
-          postedAt: job.postedAt,
-        },
-      });
-      upserted.push(rec);
-    }
+    const upserted = await upsertDiscoveredJobs(results.slice(0, limit));
 
     let filtered = upserted;
     if (location) {
@@ -87,23 +118,30 @@ router.get('/scan', requireAuth, async (req: Request, res: Response) => {
       query,
       userId: req.user!.id,
     }));
-    const results = (await Promise.all(configs.map((c) => runSource(c).catch(() => [])))).flat();
+    const results = dedupeJobs((await Promise.all(boards.map(async (b, i) => {
+      const c = configs[i];
+      const startedAt = Date.now();
+      try {
+        const jobs = await runSource(c);
+        const latencyMs = Date.now() - startedAt;
+        try {
+          await recordSourceSuccess(b.id, jobs.length, latencyMs);
+        } catch {
+          // Health writes must never fail the request (sourceHealth also swallows errors).
+        }
+        return jobs;
+      } catch (error) {
+        const latencyMs = Date.now() - startedAt;
+        try {
+          await recordSourceFailure(b.id, error, latencyMs);
+        } catch {
+          // Health writes must never fail the request (sourceHealth also swallows errors).
+        }
+        return [];
+      }
+    }))).flat());
 
-    const upserted = [];
-    for (const job of results.slice(0, Number(req.query.limit) || 100)) {
-      const existing = job.externalId
-        ? await prisma.jobListing.findUnique({ where: { source_externalId: { source: job.source, externalId: job.externalId } } }).catch(() => null)
-        : null;
-      const rec = await prisma.jobListing.upsert({
-        where: existing ? { id: existing.id } : { source_externalId: { source: job.source, externalId: job.externalId || `manual-${Date.now()}-${Math.random()}` } },
-        update: { title: job.title, company: job.company, location: job.location, description: job.description, applyUrl: job.applyUrl, sourceUrl: job.sourceUrl, postedAt: job.postedAt },
-        create: {
-          source: job.source, externalId: job.externalId, sourceUrl: job.sourceUrl, title: job.title,
-          company: job.company, location: job.location, description: job.description, applyUrl: job.applyUrl, postedAt: job.postedAt,
-        },
-      });
-      upserted.push(rec);
-    }
+    const upserted = await upsertDiscoveredJobs(results.slice(0, Number(req.query.limit) || 100));
 
     res.json(upserted.map((j) => ({
       id: j.id, source: j.source, title: j.title, company: j.company,

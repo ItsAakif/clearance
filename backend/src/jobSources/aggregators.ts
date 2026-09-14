@@ -30,6 +30,49 @@ export interface AggregatorConfig {
 // Endpoint: GET /api/jobs/{country}/search/1?app_id=&app_key=&what=&where=&results=
 // ---------------------------------------------------------------------------
 
+// Country defaults to "us". A "<cc>:" prefix on the location (e.g. "in:",
+// "gb:") overrides it and is stripped from the query location; otherwise
+// common location strings are mapped (India, UK, ...); default 'us'.
+export function resolveAdzunaCountry(location?: string): { country: string; location?: string } {
+  if (location) {
+    const prefix = location.match(/^\s*([a-z]{2})\s*:\s*(.*)$/i);
+    if (prefix) {
+      const cc = prefix[1].toLowerCase();
+      const rest = prefix[2].trim();
+      return { country: cc, location: rest || undefined };
+    }
+    const lower = location.toLowerCase();
+    const has = (...terms: string[]) => terms.some((t) => lower.includes(t));
+    if (has('india', 'bengaluru', 'bangalore', 'mumbai', 'delhi', 'hyderabad', 'chennai', 'pune', 'kolkata')) {
+      return { country: 'in', location };
+    }
+    if (has('united kingdom', 'great britain', 'england', 'scotland', 'wales', 'london', 'manchester', 'birmingham') || /\buk\b/.test(lower)) {
+      return { country: 'gb', location };
+    }
+    if (has('canada', 'toronto', 'vancouver', 'montreal')) return { country: 'ca', location };
+    if (has('australia', 'sydney', 'melbourne', 'brisbane')) return { country: 'au', location };
+    if (has('germany', 'berlin', 'munich', 'deutschland')) return { country: 'de', location };
+    if (has('france', 'paris')) return { country: 'fr', location };
+  }
+  return { country: 'us', location };
+}
+
+/** Build the Adzuna search URL (exported for tests). Caller sets credentials. */
+export function buildAdzunaUrl(
+  config: AggregatorConfig,
+  creds: { appId: string; appKey: string },
+): string {
+  const { country, location } = resolveAdzunaCountry(config.location);
+  const url = new URL(`https://api.adzuna.com/v1/api/jobs/${country}/search/1`);
+  url.searchParams.set('app_id', creds.appId);
+  url.searchParams.set('app_key', creds.appKey);
+  url.searchParams.set('what', config.query);
+  if (location) url.searchParams.set('where', location);
+  url.searchParams.set('results', String(Math.min(config.resultsWanted ?? 20, 50)));
+  url.searchParams.set('content-type', 'application/json');
+  return url.toString();
+}
+
 async function fetchAdzuna(config: AggregatorConfig): Promise<RawJob[]> {
   // Adzuna needs two secrets; we store them as a single DB key "id:key" or via
   // env ADZUNA_APP_ID + ADZUNA_APP_KEY. Prefer env split, else parse DB key.
@@ -47,15 +90,8 @@ async function fetchAdzuna(config: AggregatorConfig): Promise<RawJob[]> {
     throw new Error('Adzuna requires APP_ID and APP_KEY. Set ADZUNA_APP_ID/ADZUNA_APP_KEY or store "appId:appKey" as an Adzuna key.');
   }
 
-  // Country defaults to "us"; allow a country code via location prefix "us:" later.
-  const country = 'us';
-  const url = new URL(`https://api.adzuna.com/v1/api/jobs/${country}/search/1`);
-  url.searchParams.set('app_id', id);
-  url.searchParams.set('app_key', key);
-  url.searchParams.set('what', config.query);
-  if (config.location) url.searchParams.set('where', config.location);
-  url.searchParams.set('results', String(Math.min(config.resultsWanted ?? 20, 50)));
-  url.searchParams.set('content-type', 'application/json');
+  // Country derived from the passed location (prefix "<cc>:" or known names).
+  const url = new URL(buildAdzunaUrl(config, { appId: id, appKey: key }));
 
   const res = await fetch(url.toString());
   if (!res.ok) throw new Error(`Adzuna failed: ${res.status}`);

@@ -16,7 +16,7 @@ router.use(requireAuth, requireAdmin);
 router.get('/status', async (req, res) => {
   res.json({
     email: req.user?.email,
-    isAdmin: true,
+    isAdmin: req.user?.isAdmin ?? false,
   });
 });
 

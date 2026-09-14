@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import prisma from '../lib/prisma.js';
-import { env } from '../config/env.js';
+import { env, getAdminEmails } from '../config/env.js';
 
 export function hashSessionToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -21,6 +21,11 @@ export function isAccessPasswordValid(password: string): boolean {
   const submittedHash = crypto.createHash('sha256').update(password).digest('hex');
   const expectedHash = crypto.createHash('sha256').update(expected).digest('hex');
   return crypto.timingSafeEqual(Buffer.from(submittedHash), Buffer.from(expectedHash));
+}
+
+export function isAdminEmail(email: string | undefined | null): boolean {
+  if (!email) return false;
+  return getAdminEmails().has(email.trim().toLowerCase());
 }
 
 export function setSessionCookie(res: Response, rawToken: string): void {
@@ -68,7 +73,7 @@ export async function requireAuth(
     req.user = {
       id: session.user.id,
       email: session.user.email,
-      isAdmin: true,
+      isAdmin: isAdminEmail(session.user.email),
     };
     next();
   } catch (error) {
@@ -99,7 +104,7 @@ export async function optionalAuth(
       req.user = {
         id: session.user.id,
         email: session.user.email,
-        isAdmin: true,
+        isAdmin: isAdminEmail(session.user.email),
       };
     }
 

@@ -138,14 +138,39 @@ export const tailorResumeSchema = z.object({
 export const createApplicationSchema = z.object({
   jobListingId: z.string().uuid('Invalid job listing ID'),
   tailoredResumeId: z.string().uuid().optional(),
-  status: z.enum(['saved', 'tailored', 'applied', 'interview', 'offer', 'rejected']).default('saved'),
+  status: z.enum(['saved', 'tailored', 'applied', 'interview', 'offer', 'rejected', 'withdrawn', 'ghosted']).default('saved'),
   notes: z.string().max(2000).optional(),
 });
 
 export const updateApplicationSchema = z.object({
-  status: z.enum(['saved', 'tailored', 'applied', 'interview', 'offer', 'rejected']).optional(),
+  status: z.enum(['saved', 'tailored', 'applied', 'interview', 'offer', 'rejected', 'withdrawn', 'ghosted']).optional(),
   notes: z.string().max(2000).optional(),
   appliedAt: z.string().datetime().optional(),
+  followUpAt: z.string().datetime().nullable().optional(),
+  ghostedAt: z.string().datetime().nullable().optional(),
+  withdrawnAt: z.string().datetime().nullable().optional(),
+});
+
+// ==================== APPLICATION EVENT SCHEMAS ====================
+export const applicationEventTypeSchema = z.enum([
+  'status_change', 'note_added', 'follow_up', 'interview_scheduled', 'offer_received', 'rejected', 'withdrawn',
+]);
+
+export const createApplicationEventSchema = z.object({
+  type: applicationEventTypeSchema,
+  fromStatus: z.string().max(50).optional(),
+  toStatus: z.string().max(50).optional(),
+  title: z.string().max(200).optional(),
+  description: z.string().max(5000).optional(),
+  scheduledAt: z.string().datetime().nullable().optional(),
+  completedAt: z.string().datetime().nullable().optional(),
+});
+
+export const updateApplicationEventSchema = z.object({
+  title: z.string().max(200).nullable().optional(),
+  description: z.string().max(5000).nullable().optional(),
+  scheduledAt: z.string().datetime().nullable().optional(),
+  completedAt: z.string().datetime().nullable().optional(),
 });
 
 // ==================== CAREER PROFILE SCHEMAS ====================

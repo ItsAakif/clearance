@@ -14,7 +14,10 @@ function normalizeUrl(raw: unknown): string {
     url.hostname = url.hostname.toLowerCase();
     url.hash = '';
     const cleaned = new URL(url.href);
-    for (const [key] of cleaned.searchParams) {
+    // Collect keys first: deleting during iteration skips entries.
+    const keys: string[] = [];
+    for (const [key] of cleaned.searchParams) keys.push(key);
+    for (const key of keys) {
       if (/^(utm_|fbclid$|gclid$)/i.test(key)) {
         cleaned.searchParams.delete(key);
       }

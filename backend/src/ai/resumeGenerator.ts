@@ -1,13 +1,14 @@
 // AI Resume Generator Service
-// Uses Groq API with automatic multi-key rotation
+// Uses provider-agnostic LLM keys (keyManager.leaseNextLlmKey) with a dynamic
+// baseURL selected from the leased key's provider.
 // Per security.md: Never log API keys
 
 import OpenAI from 'openai';
 import {
-  isGroqRateLimitError,
-  leaseNextGroqKey,
-  markGroqKeyFailure,
-  markGroqKeySuccess,
+  isRateLimitError,
+  leaseNextLlmKey,
+  markKeyFailure,
+  markKeySuccess,
 } from './keyManager.js';
 
 // ==================== TYPES ====================
@@ -54,21 +55,28 @@ export interface GeneratedResume {
   skills: string[];
 }
 
-// ==================== GROQ CLIENT ====================
+// ==================== LLM CLIENT ====================
 
-async function withGroqClient<T>(callback: (client: OpenAI) => Promise<T>): Promise<T> {
-  const leasedKey = await leaseNextGroqKey();
+async function withLlmClient<T>(callback: (client: OpenAI) => Promise<T>): Promise<T> {
+  const leasedKey = await leaseNextLlmKey();
+  const baseURL = leasedKey.provider === 'groq'
+    ? 'https://api.groq.com/openai/v1'
+    : leasedKey.provider === 'openrouter'
+    ? 'https://openrouter.ai/api/v1'
+    : leasedKey.provider === 'gemini'
+    ? 'https://generativelanguage.googleapis.com/v1beta/openai'
+    : 'https://api.openai.com/v1';
   const client = new OpenAI({
     apiKey: leasedKey.apiKey,
-    baseURL: 'https://api.groq.com/openai/v1'
+    baseURL,
   });
 
   try {
     const result = await callback(client);
-    await markGroqKeySuccess(leasedKey);
+    await markKeySuccess(leasedKey);
     return result;
   } catch (error) {
-    await markGroqKeyFailure(leasedKey, isGroqRateLimitError(error));
+    await markKeyFailure(leasedKey, isRateLimitError(error));
     throw error;
   }
 }
@@ -161,7 +169,7 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT.`;
   
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const content = await withGroqClient(async (client) => {
+      const content = await withLlmClient(async (client) => {
         const response = await client.chat.completions.create({
           model: 'llama-3.1-70b-versatile',
           max_tokens: 2000,
@@ -194,7 +202,7 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT.`;
       console.error(`[ResumeGenerator] Attempt ${attempt + 1} failed:`, (error as Error).message);
       
       // Try next API key on rate limit
-      if (isGroqRateLimitError(error)) {
+      if (isRateLimitError(error)) {
         continue;
       }
 
@@ -225,7 +233,7 @@ Make it:
 
 Return ONLY the improved bullet point, no explanation.`;
 
-  const content = await withGroqClient(async (client) => {
+  const content = await withLlmClient(async (client) => {
     const response = await client.chat.completions.create({
       model: 'llama-3.1-70b-versatile',
       max_tokens: 200,
@@ -393,7 +401,7 @@ Return ONLY valid JSON matching this schema:
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const content = await withGroqClient(async (client) => {
+      const content = await withLlmClient(async (client) => {
         const response = await client.chat.completions.create({
           model: 'llama-3.3-70b-versatile',
           max_tokens: 2000,
@@ -423,7 +431,7 @@ Return ONLY valid JSON matching this schema:
       };
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      if (isGroqRateLimitError(error)) {
+      if (isRateLimitError(error)) {
         continue;
       }
       break;
@@ -472,7 +480,7 @@ async function extractFromJobDescription(
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const content = await withGroqClient(async (client) => {
+      const content = await withLlmClient(async (client) => {
         const response = await client.chat.completions.create({
           model: 'llama-3.3-70b-versatile',
           max_tokens: 800,
@@ -502,7 +510,7 @@ async function extractFromJobDescription(
       };
     } catch (error) {
       lastError = error as Error;
-      if (isGroqRateLimitError(error)) continue;
+      if (isRateLimitError(error)) continue;
       break;
     }
   }
@@ -544,7 +552,7 @@ Write a 2-3 sentence professional summary that:
 
 Return ONLY the summary paragraph, no explanation.`;
 
-  const content = await withGroqClient(async (client) => {
+  const content = await withLlmClient(async (client) => {
     const response = await client.chat.completions.create({
       model: 'llama-3.1-70b-versatile',
       max_tokens: 300,

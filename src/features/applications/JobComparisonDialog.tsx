@@ -28,19 +28,34 @@ interface ComparisonItem {
 export function JobComparisonDialog({ apps, selectedIds, open, onOpenChange }: Props) {
   const { data: items = [], isLoading, error } = useQuery({
     queryKey: ['job-comparison', selectedIds],
-    queryFn: async () => {
-      const raw = await jobsApi.compare(selectedIds);
-      const statusMap = new Map(apps.map((a) => [a.jobListing?.title, a.status]));
-      const matchMap = new Map(apps.map((a) => [a.id, a.jobListing?.match]));
-      return raw.map((r) => ({
-        title: r.title,
-        company: r.company,
-        location: r.location,
-        description: r.description,
-        applyUrl: r.applyUrl,
-        status: statusMap.get(r.title) || 'Unknown',
-        match: matchMap.get(r.id) || null,
-      })) as ComparisonItem[];
+    queryFn: async (): Promise<ComparisonItem[]> => {
+      const selected = apps.filter((a) => selectedIds.includes(a.id));
+      return Promise.all(
+        selected.map(async (a) => {
+          let description = '';
+          let location = a.jobListing?.location ?? undefined;
+          let applyUrl = a.jobListing?.applyUrl ?? undefined;
+          if (a.jobListingId) {
+            try {
+              const detail = await jobsApi.get(a.jobListingId);
+              description = detail.description || '';
+              if (!location) location = detail.location ?? undefined;
+              if (!applyUrl) applyUrl = detail.applyUrl ?? undefined;
+            } catch {
+              description = '';
+            }
+          }
+          return {
+            title: a.jobListing?.title || 'Untitled',
+            company: a.jobListing?.company || 'Unknown',
+            location,
+            description,
+            applyUrl,
+            status: a.status,
+            match: a.jobListing?.match ?? null,
+          };
+        }),
+      );
     },
     enabled: open && selectedIds.length >= 2,
   });
@@ -61,7 +76,7 @@ export function JobComparisonDialog({ apps, selectedIds, open, onOpenChange }: P
         {!isLoading && !error && (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             {items.map((item) => (
-              <div key={item.title} className="rounded-lg border border-border p-4">
+              <div key={`${item.title}-${item.company}`} className="rounded-lg border border-border p-4">
                 <h4 className="font-medium text-foreground">{item.title}</h4>
                 <p className="text-xs text-muted-foreground">{item.company} {item.location && `• ${item.location}`}</p>
                 <div className="mt-2 flex items-center gap-2 text-xs">

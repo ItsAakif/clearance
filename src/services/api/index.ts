@@ -9,7 +9,7 @@ export { aiApi } from "./ai";
 export type {
   JobListingSummary, JobEvaluation, TailoredResume, Application, ApplicationEvent, ApplicationEventType,
   ApplicationStatus, ApplicationMatchSummary, ApplicationJobListing, CreateApplicationEventInput, UpdateApplicationEventInput,
-  ApiKey, CareerProfile, ParseProfileResponse, JobBoard, SavedSearch, QuestionAnswer, JobAlert, JobComparisonItem, QuestionAnswerFilters,
+  ApiKey, CareerProfile, ParseProfileResponse, JobBoard, JobBoardType, JobBoardCreateInput, SavedSearch, QuestionAnswer, JobAlert, JobComparisonItem, QuestionAnswerFilters,
   JobSort, JobWorkMode, JobSearchFilters, JobMatchBreakdown, NormalizedJobInsights
 } from "./jobs";
 export type { InterviewAnswerCategory, GenerateInterviewAnswerInput, GenerateInterviewAnswerResponse } from "./ai";

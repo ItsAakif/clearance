@@ -7,6 +7,8 @@ import { handleApiError, NotFoundError } from '../shared/errors.js';
 import { ensureOwnership } from '../shared/auth.js';
 import { validateInput, createJobAlertSchema, updateJobAlertSchema } from '../shared/validation.js';
 import { runSource, boardToConfig, type JobSourceConfig } from '../jobSources/index.js';
+import { recordSourceSuccess, recordSourceFailure } from '../jobSources/sourceHealth.js';
+import { dedupeJobs, withDeterministicExternalId } from '../jobSources/jobIdentity.js';
 
 const router = Router();
 
@@ -110,6 +112,7 @@ router.post('/:id/run', requireAuth, async (req: Request, res: Response) => {
     await ensureOwnership(req.user!.id, alert.userId, 'Job Alert');
 
     let configs: JobSourceConfig[] = [];
+    let sourceBoards: { id: string }[] = [];
     let query = alert.query;
 
     if (alert.savedSearchId) {
@@ -120,6 +123,7 @@ router.post('/:id/run', requireAuth, async (req: Request, res: Response) => {
       const boards = await prisma.jobBoard.findMany({
         where: { userId: req.user!.id, isActive: true, ...(boardIds ? { id: { in: boardIds } } : {}) },
       });
+      sourceBoards = boards;
       configs = boards.map((b) => ({
         ...boardToConfig(b),
         query: search.query,
@@ -131,6 +135,7 @@ router.post('/:id/run', requireAuth, async (req: Request, res: Response) => {
       const boards = await prisma.jobBoard.findMany({
         where: { userId: req.user!.id, isActive: true, id: { in: sourceIds } },
       });
+      sourceBoards = boards;
       configs = boards.map((b) => ({
         ...boardToConfig(b),
         query: alert.query,
@@ -138,15 +143,56 @@ router.post('/:id/run', requireAuth, async (req: Request, res: Response) => {
       }));
     }
 
-    const results = (await Promise.all(configs.map((c) => runSource(c).catch(() => [])))).flat();
-    const matchCount = results.length;
+    const results = dedupeJobs((await Promise.all(sourceBoards.map(async (b, i) => {
+      const c = configs[i];
+      const startedAt = Date.now();
+      try {
+        const jobs = await runSource(c);
+        const latencyMs = Date.now() - startedAt;
+        try {
+          await recordSourceSuccess(b.id, jobs.length, latencyMs);
+        } catch {
+          // Health writes must never fail the request (sourceHealth also swallows errors).
+        }
+        return jobs;
+      } catch (error) {
+        const latencyMs = Date.now() - startedAt;
+        try {
+          await recordSourceFailure(b.id, error, latencyMs);
+        } catch {
+          // Health writes must never fail the request (sourceHealth also swallows errors).
+        }
+        return [];
+      }
+    }))).flat());
+
+    const upserted = [];
+    for (const job of results.slice(0, Number(req.query.limit) || 100)) {
+      const withId = job.externalId ? job : withDeterministicExternalId(job);
+      const rec = await prisma.jobListing.upsert({
+        where: { source_externalId: { source: withId.source, externalId: withId.externalId! } },
+        update: { title: withId.title, company: withId.company, location: withId.location, description: withId.description, applyUrl: withId.applyUrl, sourceUrl: withId.sourceUrl, postedAt: withId.postedAt },
+        create: {
+          source: withId.source, externalId: withId.externalId, sourceUrl: withId.sourceUrl, title: withId.title,
+          company: withId.company, location: withId.location, description: withId.description, applyUrl: withId.applyUrl, postedAt: withId.postedAt,
+        },
+      });
+      upserted.push(rec);
+    }
+    const matchCount = upserted.length;
 
     await prisma.jobAlert.update({
       where: { id: alert.id },
       data: { lastRunAt: new Date(), lastMatchCount: matchCount },
     });
 
-    res.json({ matchCount, results: results.slice(0, 50) });
+    res.json({
+      matchCount,
+      results: upserted.slice(0, 50).map((j) => ({
+        id: j.id, source: j.source, title: j.title, company: j.company,
+        location: j.location, applyUrl: j.applyUrl, postedUrl: j.sourceUrl, postedAt: j.postedAt, isActive: j.isActive,
+      })),
+    });
   } catch (error) {
     handleApiError(error, res);
   }

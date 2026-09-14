@@ -59,22 +59,6 @@ export function useEvaluateJob() {
   });
 }
 
-export function useCompareJobs() {
-  return useQuery({
-    queryKey: ['job-comparison'],
-    queryFn: () => {
-      const ids = (window as any).__compareJobIds || [];
-      if (ids.length < 2) throw new Error('Select at least 2 jobs to compare');
-      return jobsApi.compare(ids);
-    },
-    enabled: false,
-  });
-}
-
-export function setCompareJobIds(ids: string[]) {
-  (window as any).__compareJobIds = ids;
-}
-
 // ==================== TAILOR ====================
 export function useTailorResume() {
   return useMutation({
@@ -115,7 +99,7 @@ export function useCreateApplication() {
 export function useUpdateApplication() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { id: string; status?: ApplicationStatus; notes?: string; appliedAt?: string; followUpAt?: string; ghostedAt?: string; withdrawnAt?: string }) =>
+    mutationFn: (vars: { id: string; status?: ApplicationStatus; notes?: string; appliedAt?: string; followUpAt?: string | null; ghostedAt?: string | null; withdrawnAt?: string | null }) =>
       applicationsApi.update(vars.id, { status: vars.status, notes: vars.notes, appliedAt: vars.appliedAt, followUpAt: vars.followUpAt, ghostedAt: vars.ghostedAt, withdrawnAt: vars.withdrawnAt }),
     onSuccess: () => qc.invalidateQueries({ queryKey: applicationsQueryKey }),
     onError: (e: Error) => toast({ title: 'Update failed', description: e.message, variant: 'destructive' }),
