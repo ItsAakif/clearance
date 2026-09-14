@@ -19,6 +19,7 @@ import searchesRoutes from './saved-searches.js';
 import uploadedFilesRoutes from './uploaded-files.js';
 import jobAlertsRoutes from './job-alerts.js';
 import questionAnswersRoutes from './question-answers.js';
+import settingsRoutes from './settings.js';
 
 const router = Router();
 
@@ -40,5 +41,6 @@ router.use('/searches', searchesRoutes);
 router.use('/uploaded-files', uploadedFilesRoutes);
 router.use('/job-alerts', jobAlertsRoutes);
 router.use('/question-answers', questionAnswersRoutes);
+router.use('/settings', settingsRoutes);
 
 export default router;

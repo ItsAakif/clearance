@@ -112,6 +112,33 @@ export const createApiKeySchema = z.object({
   label: z.string().max(50, 'Label too long').optional(),
 });
 
+// ==================== AI MODEL SETTINGS SCHEMAS ====================
+export const llmModelProviderSchema = z.enum(['groq', 'openai', 'openrouter', 'gemini']);
+
+// Model IDs look like `llama-3.3-70b-versatile`, `openai/gpt-4o`, `gemini-2.0-flash`.
+// Allow letters, digits, dot, underscore, colon, slash, hyphen; must start alphanumeric.
+export const llmModelIdSchema = z
+  .string()
+  .max(200, 'Model ID too long')
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:\/-]*$/, 'Invalid model ID (letters, digits, . _ : / - only)');
+
+// Empty string = "clear override, use fallback chain".
+export const llmModelInputSchema = z.union([z.literal(''), llmModelIdSchema]);
+
+export const updateModelSettingsSchema = z
+  .object({
+    models: z
+      .object({
+        groq: llmModelInputSchema.optional(),
+        openai: llmModelInputSchema.optional(),
+        openrouter: llmModelInputSchema.optional(),
+        gemini: llmModelInputSchema.optional(),
+      })
+      .strict()
+      .refine((m) => Object.keys(m).length > 0, { message: 'At least one model is required' }),
+  })
+  .strict();
+
 // ==================== JOB DISCOVERY SCHEMAS ====================
 export const jobSearchSchema = z.object({
   q: z.string().min(2, 'Query too short').max(200, 'Query too long'),

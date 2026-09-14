@@ -6,6 +6,7 @@ import mammoth from 'mammoth';
 import OpenAI from 'openai';
 import { BadRequestError } from '../shared/errors.js';
 import { leaseNextLlmKey, markKeySuccess, markKeyFailure, isRateLimitError } from '../ai/keyManager.js';
+import { getProviderModel, runLlmCompletion } from '../ai/providerModels.js';
 
 // File constraints
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -160,9 +161,6 @@ export async function parseUploadedResume(
 
 // ==================== LLM-BASED STRUCTURED PARSE ====================
 
-const RESUME_PARSE_MODEL = process.env.RESUME_PARSE_MODEL || 'llama-3.3-70b-versatile';
-const RESUME_PARSE_FALLBACK = process.env.RESUME_PARSE_FALLBACK_MODEL || 'llama-3.3-70b-versatile';
-
 const RESUME_PARSE_SYSTEM = `You are an expert resume parser. Convert the provided resume text into a clean JSON structure that preserves the candidate's actual content and section ordering as faithfully as possible.
 
 Rules:
@@ -214,19 +212,23 @@ export async function parseResumeWithLLM(
     return null;
   }
 
+  const model = await getProviderModel(key.provider, { envOverride: process.env.RESUME_PARSE_MODEL });
+
   const client = new OpenAI({ apiKey: key.apiKey, baseURL: getBaseUrl(key.provider) });
 
   try {
-    const response = await client.chat.completions.create({
-      model: RESUME_PARSE_MODEL,
-      max_tokens: 2000,
-      temperature: 0.0,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: RESUME_PARSE_SYSTEM },
-        { role: 'user', content: `RESUME TEXT:\n${rawText}` },
-      ],
-    });
+    const response = await runLlmCompletion(key.provider, model, () =>
+      client.chat.completions.create({
+        model,
+        max_tokens: 2000,
+        temperature: 0.0,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: RESUME_PARSE_SYSTEM },
+          { role: 'user', content: `RESUME TEXT:\n${rawText}` },
+        ],
+      })
+    );
 
     const content = response.choices[0]?.message?.content || '';
     const jsonStr = extractJson(content);

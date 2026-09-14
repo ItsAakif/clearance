@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -13,6 +13,7 @@ import {
   Trash2,
   CheckCircle2,
   BookOpen,
+  Cpu,
 } from "lucide-react";
 import { AppLayout } from "@/components/layout";
 import { Card } from "@/components/ui/card";
@@ -44,6 +45,9 @@ import { useAuth, useDeleteAccount, useLogout, useResendVerificationEmail, useUp
 import { useToast } from "@/hooks/use-toast";
 import { useApiKeys, useCreateApiKey, useDeleteApiKey } from "@/hooks/useJobs";
 import type { ApiKey } from "@/services/api";
+import { useModelSettings, useUpdateModelSettings } from "@/hooks/useSettings";
+import { LLM_MODEL_PROVIDERS } from "@/services/api";
+import type { LlmModelProvider } from "@/services/api";
 
 // Setup Guide: which provider unlocks what, at what cost, step-by-step setup,
 // and the exact key format expected. Ordered by how essential each is.
@@ -203,6 +207,13 @@ const KEY_PROVIDERS: { provider: string; label: string; important: boolean }[] =
   { provider: "rapidapi", label: "RapidAPI (Hard Boards)", important: true },
 ];
 
+const MODEL_PROVIDER_LABELS: Record<LlmModelProvider, string> = {
+  groq: "Groq",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+  gemini: "Gemini",
+};
+
 export default function SettingsPage() {
   const navigate = useNavigate();
   const { user, isLoading: authLoading } = useAuth();
@@ -222,6 +233,28 @@ export default function SettingsPage() {
   // Per-provider input values for the "list of rows + Save All" form.
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
   const [savingKeys, setSavingKeys] = useState(false);
+
+  // AI Models (per-provider)
+  const { data: modelSettings } = useModelSettings();
+  const updateModels = useUpdateModelSettings();
+  const [modelInputs, setModelInputs] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!modelSettings) return;
+    setModelInputs({ ...modelSettings.overrides });
+  }, [modelSettings]);
+
+  const handleSaveModels = async () => {
+    const payload: Partial<Record<LlmModelProvider, string>> = {};
+    for (const provider of LLM_MODEL_PROVIDERS) {
+      payload[provider] = (modelInputs[provider] ?? "").trim();
+    }
+    try {
+      await updateModels.mutateAsync(payload);
+    } catch {
+      // toast handled by useUpdateModelSettings.onError
+    }
+  };
 
   // Save every non-empty key input. Existing keys for that provider are kept;
   // new/changed values are created (backend stores per provider).
@@ -447,6 +480,61 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 )}
+              </Card>
+            </motion.div>
+
+            {/* AI Models (per-provider) */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.27 }}
+            >
+              <Card className="p-6">
+                <div className="mb-4 flex items-center gap-2">
+                  <Cpu className="h-5 w-5 text-muted-foreground" />
+                  <h2 className="font-semibold text-foreground">AI Models</h2>
+                </div>
+                <p className="mb-4 text-sm text-muted-foreground">
+                  Choose which model each LLM provider uses. Leave a field empty to use the
+                  built-in default. If a provider retires a model, update it here without a
+                  redeploy. Legacy <code>ATS_MODEL</code>, <code>RESUME_TAILOR_MODEL</code> and{" "}
+                  <code>RESUME_PARSE_MODEL</code> env vars are still honored when no value is set here.
+                </p>
+                <div className="space-y-3">
+                  {LLM_MODEL_PROVIDERS.map((provider) => (
+                    <div key={provider} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
+                      <div className="min-w-0">
+                        <label className="text-sm font-medium text-foreground">
+                          {MODEL_PROVIDER_LABELS[provider]}
+                        </label>
+                        <Input
+                          autoComplete="off"
+                          spellCheck={false}
+                          value={modelInputs[provider] ?? ""}
+                          onChange={(e) => setModelInputs((prev) => ({ ...prev, [provider]: e.target.value }))}
+                          placeholder={`Default: ${modelSettings?.defaults[provider] ?? ""}`}
+                          className="mt-1 font-mono text-sm"
+                        />
+                      </div>
+                      {modelSettings?.overrides?.[provider] ? (
+                        <Badge variant="secondary" className="text-[10px]">Custom</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] text-muted-foreground">Default</Badge>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-5 flex justify-end">
+                  <Button onClick={handleSaveModels} disabled={updateModels.isPending || !modelSettings}>
+                    {updateModels.isPending ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…
+                      </>
+                    ) : (
+                      "Save Models"
+                    )}
+                  </Button>
+                </div>
               </Card>
             </motion.div>
 

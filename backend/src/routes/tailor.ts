@@ -16,6 +16,7 @@ import OpenAI from 'openai';
 import {
   leaseNextLlmKey, markKeySuccess, markKeyFailure, isRateLimitError, type KeyRecord,
 } from '../ai/keyManager.js';
+import { getProviderModel, runLlmCompletion } from '../ai/providerModels.js';
 import { chromium } from 'playwright';
 import HTMLtoDOCX from 'html-to-docx';
 
@@ -164,20 +165,23 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 
     const profile = await prisma.careerProfile.findUnique({ where: { userId: req.user!.id } });
 
-    const tailored = await withLlmClient(req.user!.id, async (client) => {
-      const resp = await client.chat.completions.create({
-        model: 'llama-3.1-70b-versatile',
-        max_tokens: 1800,
-        temperature: 0.4,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: TAILOR_PROMPT },
-          { role: 'user', content: buildTailorUser(resume, jd, profile ? {
-            summary: profile.summary || undefined,
-            topSkills: (profile.topSkills as string[]) || undefined,
-          } : null) },
-        ],
-      });
+    const tailored = await withLlmClient(req.user!.id, async (client, key) => {
+      const model = await getProviderModel(key.provider, { envOverride: process.env.RESUME_TAILOR_MODEL });
+      const resp = await runLlmCompletion(key.provider, model, () =>
+        client.chat.completions.create({
+          model,
+          max_tokens: 1800,
+          temperature: 0.4,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: TAILOR_PROMPT },
+            { role: 'user', content: buildTailorUser(resume, jd, profile ? {
+              summary: profile.summary || undefined,
+              topSkills: (profile.topSkills as string[]) || undefined,
+            } : null) },
+          ],
+        })
+      );
       return resp.choices[0]?.message?.content || '';
     });
 

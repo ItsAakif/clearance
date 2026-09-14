@@ -11,6 +11,7 @@ import {
   isRateLimitError,
   type KeyRecord,
 } from './keyManager.js';
+import { getProviderModel, runLlmCompletion } from './providerModels.js';
 import { checkLiveness } from '../jobSources/liveness.js';
 
 export interface ResumeLikeData {
@@ -151,17 +152,20 @@ export async function evaluateJob(
     research = await researchWithTavily(userId, q);
   }
 
-  const content = await withLlmClient(userId, async (client) => {
-    const response = await client.chat.completions.create({
-      model: 'llama-3.1-70b-versatile',
-      max_tokens: 1500,
-      temperature: 0.3,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: RUBRIC_SYSTEM_PROMPT },
-        { role: 'user', content: buildUserPrompt(resume, jobDescription, research, opts.profile) },
-      ],
-    });
+  const content = await withLlmClient(userId, async (client, key) => {
+    const model = await getProviderModel(key.provider);
+    const response = await runLlmCompletion(key.provider, model, () =>
+      client.chat.completions.create({
+        model,
+        max_tokens: 1500,
+        temperature: 0.3,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: RUBRIC_SYSTEM_PROMPT },
+          { role: 'user', content: buildUserPrompt(resume, jobDescription, research, opts.profile) },
+        ],
+      })
+    );
     return response.choices[0]?.message?.content || '';
   });
 

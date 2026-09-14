@@ -10,6 +10,7 @@ import {
   markKeyFailure,
   markKeySuccess,
 } from './keyManager.js';
+import { getProviderModel, runLlmCompletion } from './providerModels.js';
 
 export interface GenerateInterviewAnswerInput {
   question: string;
@@ -39,20 +40,8 @@ RULES:
 
 Return ONLY the answer text, no explanations.`;
 
-  async function callLlm(client: OpenAI): Promise<string> {
-    const response = await client.chat.completions.create({
-      model: 'llama-3.1-70b-versatile',
-      max_tokens: 600,
-      temperature: 0.6,
-      messages: [
-        { role: 'system', content: 'You are an expert interview coach. Return only the answer text.' },
-        { role: 'user', content: prompt },
-      ],
-    });
-    return response.choices[0]?.message?.content?.trim() || '';
-  }
-
   const leasedKey = await leaseNextLlmKey();
+  const model = await getProviderModel(leasedKey.provider);
   const baseURL = leasedKey.provider === 'groq'
     ? 'https://api.groq.com/openai/v1'
     : leasedKey.provider === 'openrouter'
@@ -63,7 +52,18 @@ Return ONLY the answer text, no explanations.`;
   const client = new OpenAI({ apiKey: leasedKey.apiKey, baseURL });
 
   try {
-    const answer = await callLlm(client);
+    const response = await runLlmCompletion(leasedKey.provider, model, () =>
+      client.chat.completions.create({
+        model,
+        max_tokens: 600,
+        temperature: 0.6,
+        messages: [
+          { role: 'system', content: 'You are an expert interview coach. Return only the answer text.' },
+          { role: 'user', content: prompt },
+        ],
+      })
+    );
+    const answer = response.choices[0]?.message?.content?.trim() || '';
     await markKeySuccess(leasedKey);
     if (!answer) throw new Error('Empty answer from model');
     return answer;

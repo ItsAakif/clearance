@@ -2,8 +2,7 @@
 // Produces the INITIAL tailored draft from a master resume + job description.
 import OpenAI from 'openai';
 import { leaseNextLlmKey, markKeySuccess, markKeyFailure, isRateLimitError } from '../ai/keyManager.js';
-
-const IMPROVER_MODEL = process.env.RESUME_TAILOR_MODEL || 'llama-3.1-70b-versatile';
+import { getProviderModel, runLlmCompletion } from '../ai/providerModels.js';
 
 const IMPROVER_SYSTEM = `You are an expert resume writer. Given a master resume and a target job description, produce an INITIAL tailored draft.
 RULES:
@@ -39,14 +38,16 @@ export async function improveResumeForJob(input: {
     : '';
 
   const key = await leaseNextLlmKey();
+  const model = await getProviderModel(key.provider, { envOverride: process.env.RESUME_TAILOR_MODEL });
   const client = new OpenAI({ apiKey: key.apiKey, baseURL: getBaseUrl(key.provider) });
   try {
-    const resp = await client.chat.completions.create({
-      model: IMPROVER_MODEL,
-      max_tokens: 2000,
-      temperature: 0.4,
-      response_format: { type: 'json_object' },
-      messages: [
+    const resp = await runLlmCompletion(key.provider, model, () =>
+      client.chat.completions.create({
+        model,
+        max_tokens: 2000,
+        temperature: 0.4,
+        response_format: { type: 'json_object' },
+        messages: [
         { role: 'system', content: IMPROVER_SYSTEM },
         {
           role: 'user',
@@ -63,7 +64,8 @@ export async function improveResumeForJob(input: {
             )}${profileSection}\n\nJOB DESCRIPTION:\n${input.jd}\n\nReturn the tailored resume JSON only.`,
         },
       ],
-    });
+      })
+    );
     await markKeySuccess(key);
     const match = (resp.choices[0]?.message?.content || '{}').match(/\{[\s\S]*\}/);
     const json = JSON.parse(match ? match[0] : '{}');

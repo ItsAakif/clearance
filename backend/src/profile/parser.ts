@@ -2,8 +2,7 @@
 // Extracted from routes/profile.ts to remove duplication and ease reuse.
 import OpenAI from 'openai';
 import { leaseNextLlmKey, markKeySuccess, markKeyFailure, isRateLimitError } from '../ai/keyManager.js';
-
-const PROFILE_PARSE_MODEL = process.env.PROFILE_PARSE_MODEL || 'llama-3.1-70b-versatile';
+import { getProviderModel, runLlmCompletion } from '../ai/providerModels.js';
 
 const PROFILE_SYSTEM = `Extract career profile facts from this resume. Return JSON: { "targetRoles": string[], "seniority": "junior"|"mid"|"senior"|"staff"|"lead"|"principal"|null, "topSkills": string[], "industries": string[], "summary": string, "inferredMinSalary": number|null }. Only include facts present in the resume; use null for unknowns.`;
 
@@ -35,18 +34,21 @@ export async function parseProfileFromResume(
   userId?: string
 ): Promise<ParsedProfileSuggestion> {
   const key = await leaseNextLlmKey(userId);
+  const model = await getProviderModel(key.provider, { envOverride: process.env.PROFILE_PARSE_MODEL });
   const client = new OpenAI({ apiKey: key.apiKey, baseURL: getBaseUrl(key.provider) });
   try {
-    const resp = await client.chat.completions.create({
-      model: PROFILE_PARSE_MODEL,
-      max_tokens: 1200,
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: PROFILE_SYSTEM },
-        { role: 'user', content: resumeText },
-      ],
-    });
+    const resp = await runLlmCompletion(key.provider, model, () =>
+      client.chat.completions.create({
+        model,
+        max_tokens: 1200,
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: PROFILE_SYSTEM },
+          { role: 'user', content: resumeText },
+        ],
+      })
+    );
     await markKeySuccess(key);
     const content = resp.choices[0]?.message?.content || '';
     const jsonMatch = content.match(/\{[\s\S]*\}/);

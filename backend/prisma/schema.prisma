@@ -442,3 +442,11 @@ model QuestionAnswer {
   @@index([userId])
   @@index([category])
 }
+
+// ==================== APP SETTINGS ====================
+model AppSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}

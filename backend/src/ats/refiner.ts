@@ -5,9 +5,8 @@
 //   3. Alignment validation vs. the MASTER resume (truthfulness guard)
 import OpenAI from 'openai';
 import { leaseNextLlmKey, markKeySuccess, markKeyFailure, isRateLimitError } from '../ai/keyManager.js';
+import { getProviderModel, runLlmCompletion } from '../ai/providerModels.js';
 import type { TailoredDraft } from './improver.js';
-
-const REFINER_MODEL = process.env.RESUME_TAILOR_MODEL || 'llama-3.1-70b-versatile';
 
 const REFINER_SYSTEM = `You are a resume refiner. Given an initial tailored draft, a job description, and the candidate's MASTER resume, produce a refined, final tailored resume.
 RULES:
@@ -36,14 +35,16 @@ export async function refineResume(input: {
   masterResume: { summary?: string; experience?: any[]; education?: any[]; skills?: string[] };
 }): Promise<RefineResult> {
   const key = await leaseNextLlmKey();
+  const model = await getProviderModel(key.provider, { envOverride: process.env.RESUME_TAILOR_MODEL });
   const client = new OpenAI({ apiKey: key.apiKey, baseURL: getBaseUrl(key.provider) });
   try {
-    const resp = await client.chat.completions.create({
-      model: REFINER_MODEL,
-      max_tokens: 2000,
-      temperature: 0.3,
-      response_format: { type: 'json_object' },
-      messages: [
+    const resp = await runLlmCompletion(key.provider, model, () =>
+      client.chat.completions.create({
+        model,
+        max_tokens: 2000,
+        temperature: 0.3,
+        response_format: { type: 'json_object' },
+        messages: [
         { role: 'system', content: REFINER_SYSTEM },
         {
           role: 'user',
@@ -60,7 +61,8 @@ export async function refineResume(input: {
             )}\n\nJOB DESCRIPTION:\n${input.jd}\n\nReturn the refined resume JSON only.`,
         },
       ],
-    });
+      })
+    );
     await markKeySuccess(key);
     const match = (resp.choices[0]?.message?.content || '{}').match(/\{[\s\S]*\}/);
     const json = JSON.parse(match ? match[0] : '{}');

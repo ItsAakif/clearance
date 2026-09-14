@@ -3,6 +3,7 @@
 
 import { z } from 'zod';
 import { leaseNextLlmKey, markKeySuccess, markKeyFailure, isRateLimitError, type KeyRecord } from '../ai/keyManager.js';
+import { getProviderModel, runLlmCompletion } from '../ai/providerModels.js';
 import OpenAI from 'openai';
 import type { ResumeData } from './scanner.js';
 import { loadAndRender } from './promptLoader.js';
@@ -127,11 +128,6 @@ function normalizeEvaluation(obj: unknown): LLMEvaluation {
 
 // ==================== MAIN EVALUATOR ====================
 
-const MODEL = process.env.ATS_MODEL || 'llama-3.3-70b-versatile';
-// NOTE: the previous fallback `llama-3.1-70b-versatile` was decommissioned by Groq
-// and returns a 400. Retry on the same live model family instead.
-const FALLBACK_MODEL = process.env.ATS_FALLBACK_MODEL || 'llama-3.3-70b-versatile';
-
 function getBaseUrl(provider: string): string {
   switch (provider) {
     case 'groq': return 'https://api.groq.com/openai/v1';
@@ -145,18 +141,23 @@ async function callLLMWithRetry(
   client: OpenAI,
   prompt: string,
   key: KeyRecord,
+  model: string,
+  fallbackModel: string,
   attempt = 1
 ): Promise<LLMEvaluation> {
-  const response = await client.chat.completions.create({
-    model: attempt === 1 ? MODEL : FALLBACK_MODEL,
-    max_tokens: 1500,
-    temperature: 0.2,
-    response_format: { type: 'json_object' },
-    messages: [
-      { role: 'system', content: getSystemPrompt() },
-      { role: 'user', content: prompt },
-    ],
-  });
+  const activeModel = attempt === 1 ? model : fallbackModel;
+  const response = await runLlmCompletion(key.provider, activeModel, () =>
+    client.chat.completions.create({
+      model: activeModel,
+      max_tokens: 1500,
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: getSystemPrompt() },
+        { role: 'user', content: prompt },
+      ],
+    })
+  );
 
   const content = response.choices[0]?.message?.content || '';
   const jsonStr = extractJson(content);
@@ -168,7 +169,7 @@ async function callLLMWithRetry(
   if (!result.success) {
     if (attempt === 1) {
       // Retry with stricter instruction
-      return callLLMWithRetry(client, prompt + '\n\nIMPORTANT: Return ONLY valid JSON matching the exact schema. No extra fields, no markdown.', key, 2);
+      return callLLMWithRetry(client, prompt + '\n\nIMPORTANT: Return ONLY valid JSON matching the exact schema. No extra fields, no markdown.', key, model, fallbackModel, 2);
     }
     throw new Error(`Validation failed: ${result.error.errors.map(e => e.message).join(', ')}`);
   }
@@ -182,14 +183,16 @@ export async function evaluateResumeWithLLM(
 ): Promise<LLMEvaluation> {
   // Lease the next available LLM key (Groq first via leaseNextLlmKey)
   const key = await leaseNextLlmKey(userId);
-  
+  const model = await getProviderModel(key.provider, { envOverride: process.env.ATS_MODEL });
+  const fallbackModel = await getProviderModel(key.provider, { envOverride: process.env.ATS_FALLBACK_MODEL });
+
   const baseURL = getBaseUrl(key.provider);
   const client = new OpenAI({ apiKey: key.apiKey, baseURL });
 
   const prompt = buildUserPrompt(resume);
 
   try {
-    const evaluation = await callLLMWithRetry(client, prompt, key);
+    const evaluation = await callLLMWithRetry(client, prompt, key, model, fallbackModel);
     await markKeySuccess(key);
     return evaluation;
   } catch (error) {

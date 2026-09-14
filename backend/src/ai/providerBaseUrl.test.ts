@@ -29,6 +29,17 @@ vi.mock('./keyManager.js', () => ({
   isRateLimitError: () => false,
 }));
 
+vi.mock('./providerModels.js', () => ({
+  getProviderModel: vi.fn(async () => 'test-model'),
+  runLlmCompletion: async (_provider: string, _model: string, run: () => Promise<unknown>) => run(),
+  DEFAULT_MODELS: {
+    groq: 'llama-3.3-70b-versatile',
+    openai: 'gpt-4o-mini',
+    openrouter: 'meta-llama/llama-3.3-70b-instruct',
+    gemini: 'gemini-2.0-flash',
+  },
+}));
+
 function llmKey(provider: string) {
   return { id: `test-${provider}`, apiKey: 'test-key', provider, source: 'env' as const, userId: null };
 }
@@ -52,6 +63,8 @@ describe('provider baseURL selection', () => {
     expect(openaiInstances[0].baseURL).toBe('https://openrouter.ai/api/v1');
     expect(openaiInstances[0].apiKey).toBe('test-key');
     expect(mockMarkSuccess).toHaveBeenCalled();
+    expect(completionHandler).toHaveBeenCalled();
+    expect((completionHandler.mock.calls[0][0] as { model?: string }).model).toBe('test-model');
   });
 
   it('interviewGenerator uses the gemini baseURL for a gemini key', async () => {

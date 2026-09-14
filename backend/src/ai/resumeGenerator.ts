@@ -9,7 +9,9 @@ import {
   leaseNextLlmKey,
   markKeyFailure,
   markKeySuccess,
+  type KeyRecord,
 } from './keyManager.js';
+import { getProviderModel, runLlmCompletion } from './providerModels.js';
 
 // ==================== TYPES ====================
 
@@ -57,7 +59,7 @@ export interface GeneratedResume {
 
 // ==================== LLM CLIENT ====================
 
-async function withLlmClient<T>(callback: (client: OpenAI) => Promise<T>): Promise<T> {
+async function withLlmClient<T>(callback: (client: OpenAI, key: KeyRecord) => Promise<T>): Promise<T> {
   const leasedKey = await leaseNextLlmKey();
   const baseURL = leasedKey.provider === 'groq'
     ? 'https://api.groq.com/openai/v1'
@@ -66,13 +68,10 @@ async function withLlmClient<T>(callback: (client: OpenAI) => Promise<T>): Promi
     : leasedKey.provider === 'gemini'
     ? 'https://generativelanguage.googleapis.com/v1beta/openai'
     : 'https://api.openai.com/v1';
-  const client = new OpenAI({
-    apiKey: leasedKey.apiKey,
-    baseURL,
-  });
+  const client = new OpenAI({ apiKey: leasedKey.apiKey, baseURL });
 
   try {
-    const result = await callback(client);
+    const result = await callback(client, leasedKey);
     await markKeySuccess(leasedKey);
     return result;
   } catch (error) {
@@ -169,16 +168,19 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT.`;
   
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const content = await withLlmClient(async (client) => {
-        const response = await client.chat.completions.create({
-          model: 'llama-3.1-70b-versatile',
-          max_tokens: 2000,
-          temperature: 0.7,
-          messages: [
-            { role: 'system', content: RESUME_GENERATION_SYSTEM_PROMPT },
-            { role: 'user', content: prompt }
-          ]
-        });
+      const content = await withLlmClient(async (client, key) => {
+        const model = await getProviderModel(key.provider);
+        const response = await runLlmCompletion(key.provider, model, () =>
+          client.chat.completions.create({
+            model,
+            max_tokens: 2000,
+            temperature: 0.7,
+            messages: [
+              { role: 'system', content: RESUME_GENERATION_SYSTEM_PROMPT },
+              { role: 'user', content: prompt },
+            ],
+          })
+        );
 
         return response.choices[0]?.message?.content || '';
       });
@@ -233,16 +235,19 @@ Make it:
 
 Return ONLY the improved bullet point, no explanation.`;
 
-  const content = await withLlmClient(async (client) => {
-    const response = await client.chat.completions.create({
-      model: 'llama-3.1-70b-versatile',
-      max_tokens: 200,
-      temperature: 0.7,
-      messages: [
-        { role: 'system', content: 'You are an expert resume writer. Respond with only the improved bullet point.' },
-        { role: 'user', content: prompt }
-      ]
-    });
+  const content = await withLlmClient(async (client, key) => {
+    const model = await getProviderModel(key.provider);
+    const response = await runLlmCompletion(key.provider, model, () =>
+      client.chat.completions.create({
+        model,
+        max_tokens: 200,
+        temperature: 0.7,
+        messages: [
+          { role: 'system', content: 'You are an expert resume writer. Respond with only the improved bullet point.' },
+          { role: 'user', content: prompt },
+        ],
+      })
+    );
 
     return response.choices[0]?.message?.content?.trim() || originalBullet;
   });
@@ -401,17 +406,20 @@ Return ONLY valid JSON matching this schema:
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const content = await withLlmClient(async (client) => {
-        const response = await client.chat.completions.create({
-          model: 'llama-3.3-70b-versatile',
-          max_tokens: 2000,
-          temperature: 0.4,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: 'You are a precise, truthful resume editor. Return only valid JSON.' },
-            { role: 'user', content: prompt },
-          ],
-        });
+      const content = await withLlmClient(async (client, key) => {
+        const model = await getProviderModel(key.provider);
+        const response = await runLlmCompletion(key.provider, model, () =>
+          client.chat.completions.create({
+            model,
+            max_tokens: 2000,
+            temperature: 0.4,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: 'You are a precise, truthful resume editor. Return only valid JSON.' },
+              { role: 'user', content: prompt },
+            ],
+          })
+        );
         return response.choices[0]?.message?.content?.trim() || '';
       });
 
@@ -480,17 +488,20 @@ async function extractFromJobDescription(
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const content = await withLlmClient(async (client) => {
-        const response = await client.chat.completions.create({
-          model: 'llama-3.3-70b-versatile',
-          max_tokens: 800,
-          temperature: 0.2,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: JD_EXTRACTION_SYSTEM_PROMPT },
-            { role: 'user', content: prompt },
-          ],
-        });
+      const content = await withLlmClient(async (client, key) => {
+        const model = await getProviderModel(key.provider);
+        const response = await runLlmCompletion(key.provider, model, () =>
+          client.chat.completions.create({
+            model,
+            max_tokens: 800,
+            temperature: 0.2,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: JD_EXTRACTION_SYSTEM_PROMPT },
+              { role: 'user', content: prompt },
+            ],
+          })
+        );
         return response.choices[0]?.message?.content || '';
       });
 
@@ -552,16 +563,19 @@ Write a 2-3 sentence professional summary that:
 
 Return ONLY the summary paragraph, no explanation.`;
 
-  const content = await withLlmClient(async (client) => {
-    const response = await client.chat.completions.create({
-      model: 'llama-3.1-70b-versatile',
-      max_tokens: 300,
-      temperature: 0.7,
-      messages: [
-        { role: 'system', content: 'You are an expert resume writer. Respond with only the professional summary.' },
-        { role: 'user', content: prompt }
-      ]
-    });
+  const content = await withLlmClient(async (client, key) => {
+    const model = await getProviderModel(key.provider);
+    const response = await runLlmCompletion(key.provider, model, () =>
+      client.chat.completions.create({
+        model,
+        max_tokens: 300,
+        temperature: 0.7,
+        messages: [
+          { role: 'system', content: 'You are an expert resume writer. Respond with only the professional summary.' },
+          { role: 'user', content: prompt },
+        ],
+      })
+    );
 
     return response.choices[0]?.message?.content?.trim() || '';
   });
