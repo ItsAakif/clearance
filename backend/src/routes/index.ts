@@ -20,6 +20,7 @@ import uploadedFilesRoutes from './uploaded-files.js';
 import jobAlertsRoutes from './job-alerts.js';
 import questionAnswersRoutes from './question-answers.js';
 import settingsRoutes from './settings.js';
+import providersRoutes from './providers.js';
 
 const router = Router();
 
@@ -42,5 +43,6 @@ router.use('/uploaded-files', uploadedFilesRoutes);
 router.use('/job-alerts', jobAlertsRoutes);
 router.use('/question-answers', questionAnswersRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/providers', providersRoutes);
 
 export default router;

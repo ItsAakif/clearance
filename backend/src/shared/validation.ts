@@ -105,7 +105,41 @@ export const jobMatchSchema = z.object({
 });
 
 // ==================== API KEY (BYOK) SCHEMAS ====================
-export const apiKeyProviderSchema = z.enum(['openai', 'groq', 'openrouter', 'gemini', 'tavily', 'exa', 'firecrawl', 'crawl4ai', 'rapidapi', 'adzuna', 'jooble', 'careerjet']);
+// Custom providers use ids like `custom:my-llm` (slug: [a-z0-9-], max 40).
+export const customProviderIdSchema = z
+  .string()
+  .regex(/^custom:[a-z0-9-]{1,40}$/, 'Invalid custom provider id (expected custom:<slug>, [a-z0-9-], max 40)');
+
+const llmProviderIds = [
+  'groq',
+  'openai',
+  'openrouter',
+  'gemini',
+  'anthropic',
+  'zai',
+  'deepseek',
+  'mistral',
+  'together',
+  'fireworks',
+  'azure-openai',
+  'ollama',
+  'lmstudio',
+] as const;
+
+export const apiKeyProviderSchema = z.union([
+  z.enum([
+    ...llmProviderIds,
+    'tavily',
+    'exa',
+    'firecrawl',
+    'crawl4ai',
+    'rapidapi',
+    'adzuna',
+    'jooble',
+    'careerjet',
+  ]),
+  customProviderIdSchema,
+]);
 export const createApiKeySchema = z.object({
   provider: apiKeyProviderSchema,
   apiKey: z.string().min(8, 'API key too short').max(500, 'API key too long'),
@@ -113,7 +147,7 @@ export const createApiKeySchema = z.object({
 });
 
 // ==================== AI MODEL SETTINGS SCHEMAS ====================
-export const llmModelProviderSchema = z.enum(['groq', 'openai', 'openrouter', 'gemini']);
+export const llmModelProviderSchema = z.union([z.enum(llmProviderIds), customProviderIdSchema]);
 
 // Model IDs look like `llama-3.3-70b-versatile`, `openai/gpt-4o`, `gemini-2.0-flash`.
 // Allow letters, digits, dot, underscore, colon, slash, hyphen; must start alphanumeric.
@@ -127,15 +161,38 @@ export const llmModelInputSchema = z.union([z.literal(''), llmModelIdSchema]);
 
 export const updateModelSettingsSchema = z
   .object({
+    // The 13 registry providers are explicit keys; `custom:<slug>` ids are
+    // accepted via catchall so per-custom-provider models persist through the
+    // same path. Unknown non-custom keys are still rejected (strict-like).
     models: z
       .object({
         groq: llmModelInputSchema.optional(),
         openai: llmModelInputSchema.optional(),
         openrouter: llmModelInputSchema.optional(),
         gemini: llmModelInputSchema.optional(),
+        anthropic: llmModelInputSchema.optional(),
+        zai: llmModelInputSchema.optional(),
+        deepseek: llmModelInputSchema.optional(),
+        mistral: llmModelInputSchema.optional(),
+        together: llmModelInputSchema.optional(),
+        fireworks: llmModelInputSchema.optional(),
+        'azure-openai': llmModelInputSchema.optional(),
+        ollama: llmModelInputSchema.optional(),
+        lmstudio: llmModelInputSchema.optional(),
       })
-      .strict()
-      .refine((m) => Object.keys(m).length > 0, { message: 'At least one model is required' }),
+      .catchall(llmModelInputSchema)
+      .refine((m) => Object.keys(m).length > 0, { message: 'At least one model is required' })
+      .superRefine((m, ctx) => {
+        const known = new Set([
+          'groq', 'openai', 'openrouter', 'gemini', 'anthropic', 'zai', 'deepseek',
+          'mistral', 'together', 'fireworks', 'azure-openai', 'ollama', 'lmstudio',
+        ]);
+        for (const key of Object.keys(m)) {
+          if (!known.has(key) && !/^custom:[a-z0-9-]{1,40}$/.test(key)) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Unknown provider: ${key}` });
+          }
+        }
+      }),
   })
   .strict();
 

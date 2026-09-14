@@ -6,9 +6,10 @@ import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/admin.js';
-import { handleApiError, NotFoundError, ForbiddenError } from '../shared/errors.js';
+import { handleApiError, NotFoundError, ForbiddenError, BadRequestError } from '../shared/errors.js';
 import { validateInput, createApiKeySchema } from '../shared/validation.js';
 import { encryptSecret, maskKey } from '../lib/crypto.js';
+import { getCustomBaseUrl, isCustomProviderId } from '../ai/providerRegistry.js';
 import { leaseNextKey, markKeySuccess, markKeyFailure, isRateLimitError } from '../ai/keyManager.js';
 
 const router = Router();
@@ -42,6 +43,16 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const { provider, apiKey, label } = validateInput(createApiKeySchema, req.body);
+
+    // Custom providers (`custom:<slug>`) and azure-openai carry their endpoint
+    // in AIProviderKey.label as JSON {"baseUrl":"…"} (see
+    // CUSTOM_BASE_URL_LABEL_DOC in ai/providerRegistry.ts). Require it here so
+    // a custom key is never stored without a resolvable endpoint.
+    if ((isCustomProviderId(provider) || provider === 'azure-openai') && !getCustomBaseUrl(label)) {
+      throw new BadRequestError(
+        'Custom provider label must carry the endpoint as JSON {"baseUrl":"https://…"} (max 50 chars)'
+      );
+    }
 
     // Validate the key with a lightweight provider ping
     const probe = await leaseNextKey(provider, req.user!.id).catch(() => null);

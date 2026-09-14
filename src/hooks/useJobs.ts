@@ -21,7 +21,7 @@ export function useApiKeys() {
 export function useCreateApiKey() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { provider: ApiKey['provider']; apiKey: string; label?: string }) =>
+    mutationFn: (vars: { provider: string; apiKey: string; label?: string }) =>
       keysApi.create(vars.provider, vars.apiKey, vars.label),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keysQueryKey });

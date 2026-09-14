@@ -12,11 +12,10 @@ import { validateInput, tailorResumeSchema } from '../shared/validation.js';
 import { improveResumeForJob } from '../ats/improver.js';
 import { refineResume } from '../ats/refiner.js';
 import { scoreResumeAgainstJob } from '../ats/atsScorer.js';
-import OpenAI from 'openai';
 import {
   leaseNextLlmKey, markKeySuccess, markKeyFailure, isRateLimitError, type KeyRecord,
 } from '../ai/keyManager.js';
-import { getProviderModel, runLlmCompletion } from '../ai/providerModels.js';
+import { getProviderModel, runLlmCompletion, createLlmClient, type LlmChatClient } from '../ai/providerModels.js';
 import { chromium } from 'playwright';
 import HTMLtoDOCX from 'html-to-docx';
 
@@ -41,13 +40,9 @@ CANDIDATE CAREER PROFILE (calibrate tone/emphasis, do NOT invent facts):
   }, null, 2)}${profileSection}\n\nJOB DESCRIPTION:\n${jd}\n\nReturn the tailored resume JSON only.`;
 }
 
-async function withLlmClient<T>(userId: string | undefined, cb: (client: OpenAI, key: KeyRecord) => Promise<T>): Promise<T> {
+async function withLlmClient<T>(userId: string | undefined, cb: (client: LlmChatClient, key: KeyRecord) => Promise<T>): Promise<T> {
   const key = await leaseNextLlmKey(userId);
-  const baseURL = key.provider === 'groq' ? 'https://api.groq.com/openai/v1'
-    : key.provider === 'openrouter' ? 'https://openrouter.ai/api/v1'
-    : key.provider === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta/openai'
-    : 'https://api.openai.com/v1';
-  const client = new OpenAI({ apiKey: key.apiKey, baseURL });
+  const client = createLlmClient(key);
   try {
     const r = await cb(client, key);
     await markKeySuccess(key);

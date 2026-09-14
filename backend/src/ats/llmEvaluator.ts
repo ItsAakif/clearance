@@ -3,8 +3,7 @@
 
 import { z } from 'zod';
 import { leaseNextLlmKey, markKeySuccess, markKeyFailure, isRateLimitError, type KeyRecord } from '../ai/keyManager.js';
-import { getProviderModel, runLlmCompletion } from '../ai/providerModels.js';
-import OpenAI from 'openai';
+import { getProviderModel, runLlmCompletion, createLlmClient, type LlmChatClient } from '../ai/providerModels.js';
 import type { ResumeData } from './scanner.js';
 import { loadAndRender } from './promptLoader.js';
 
@@ -128,17 +127,8 @@ function normalizeEvaluation(obj: unknown): LLMEvaluation {
 
 // ==================== MAIN EVALUATOR ====================
 
-function getBaseUrl(provider: string): string {
-  switch (provider) {
-    case 'groq': return 'https://api.groq.com/openai/v1';
-    case 'openrouter': return 'https://openrouter.ai/api/v1';
-    case 'gemini': return 'https://generativelanguage.googleapis.com/v1beta/openai';
-    default: return 'https://api.openai.com/v1';
-  }
-}
-
 async function callLLMWithRetry(
-  client: OpenAI,
+  client: LlmChatClient,
   prompt: string,
   key: KeyRecord,
   model: string,
@@ -186,8 +176,7 @@ export async function evaluateResumeWithLLM(
   const model = await getProviderModel(key.provider, { envOverride: process.env.ATS_MODEL });
   const fallbackModel = await getProviderModel(key.provider, { envOverride: process.env.ATS_FALLBACK_MODEL });
 
-  const baseURL = getBaseUrl(key.provider);
-  const client = new OpenAI({ apiKey: key.apiKey, baseURL });
+  const client = createLlmClient(key);
 
   const prompt = buildUserPrompt(resume);
 

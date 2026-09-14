@@ -3,7 +3,6 @@
 // baseURL selected from the leased key's provider.
 // Per security.md: Never log API keys
 
-import OpenAI from 'openai';
 import {
   isRateLimitError,
   leaseNextLlmKey,
@@ -11,7 +10,7 @@ import {
   markKeySuccess,
   type KeyRecord,
 } from './keyManager.js';
-import { getProviderModel, runLlmCompletion } from './providerModels.js';
+import { getProviderModel, runLlmCompletion, createLlmClient, type LlmChatClient } from './providerModels.js';
 
 // ==================== TYPES ====================
 
@@ -59,16 +58,9 @@ export interface GeneratedResume {
 
 // ==================== LLM CLIENT ====================
 
-async function withLlmClient<T>(callback: (client: OpenAI, key: KeyRecord) => Promise<T>): Promise<T> {
+async function withLlmClient<T>(callback: (client: LlmChatClient, key: KeyRecord) => Promise<T>): Promise<T> {
   const leasedKey = await leaseNextLlmKey();
-  const baseURL = leasedKey.provider === 'groq'
-    ? 'https://api.groq.com/openai/v1'
-    : leasedKey.provider === 'openrouter'
-    ? 'https://openrouter.ai/api/v1'
-    : leasedKey.provider === 'gemini'
-    ? 'https://generativelanguage.googleapis.com/v1beta/openai'
-    : 'https://api.openai.com/v1';
-  const client = new OpenAI({ apiKey: leasedKey.apiKey, baseURL });
+  const client = createLlmClient(leasedKey);
 
   try {
     const result = await callback(client, leasedKey);

@@ -3,10 +3,9 @@
 
 import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
-import OpenAI from 'openai';
 import { BadRequestError } from '../shared/errors.js';
 import { leaseNextLlmKey, markKeySuccess, markKeyFailure, isRateLimitError } from '../ai/keyManager.js';
-import { getProviderModel, runLlmCompletion } from '../ai/providerModels.js';
+import { getProviderModel, runLlmCompletion, createLlmClient } from '../ai/providerModels.js';
 
 // File constraints
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -184,15 +183,6 @@ Return ONLY valid JSON (no markdown) matching exactly:
   "languages": []
 }`;
 
-function getBaseUrl(provider: string): string {
-  switch (provider) {
-    case 'groq': return 'https://api.groq.com/openai/v1';
-    case 'openrouter': return 'https://openrouter.ai/api/v1';
-    case 'gemini': return 'https://generativelanguage.googleapis.com/v1beta/openai';
-    default: return 'https://api.openai.com/v1';
-  }
-}
-
 function extractJson(text: string): string {
   const match = text.match(/\{[\s\S]*\}/);
   return match ? match[0] : '';
@@ -214,7 +204,7 @@ export async function parseResumeWithLLM(
 
   const model = await getProviderModel(key.provider, { envOverride: process.env.RESUME_PARSE_MODEL });
 
-  const client = new OpenAI({ apiKey: key.apiKey, baseURL: getBaseUrl(key.provider) });
+  const client = createLlmClient(key);
 
   try {
     const response = await runLlmCompletion(key.provider, model, () =>

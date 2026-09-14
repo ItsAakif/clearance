@@ -46,8 +46,14 @@ describe('settings models route', () => {
     const res = await request(makeApp()).get('/models');
     expect(res.status).toBe(200);
     expect(Object.keys(res.body).sort()).toEqual(['defaults', 'models', 'overrides']);
-    expect(Object.keys(res.body.models).sort()).toEqual(['gemini', 'groq', 'openai', 'openrouter']);
-    expect(Object.keys(res.body.defaults).sort()).toEqual(['gemini', 'groq', 'openai', 'openrouter']);
+    expect(Object.keys(res.body.models).sort()).toEqual([
+      'anthropic', 'azure-openai', 'deepseek', 'fireworks', 'gemini', 'groq',
+      'lmstudio', 'mistral', 'ollama', 'openai', 'openrouter', 'together', 'zai',
+    ]);
+    expect(Object.keys(res.body.defaults).sort()).toEqual([
+      'anthropic', 'azure-openai', 'deepseek', 'fireworks', 'gemini', 'groq',
+      'lmstudio', 'mistral', 'ollama', 'openai', 'openrouter', 'together', 'zai',
+    ]);
     expect(res.body.models.groq).toBe('llama-3.3-70b-versatile');
   });
 
@@ -89,8 +95,13 @@ describe('settings models route', () => {
   });
 
   it('rejects unknown providers', async () => {
-    const res = await request(makeApp()).put('/models').send({ models: { anthropic: 'claude-3' } });
+    const res = await request(makeApp()).put('/models').send({ models: { skynet: 'claude-3' } });
     expect(res.status).toBe(400);
+  });
+
+  it('accepts registry providers (e.g. anthropic)', async () => {
+    const res = await request(makeApp()).put('/models').send({ models: { anthropic: 'claude-sonnet-4-6' } });
+    expect(res.status).toBe(200);
   });
 
   it('rejects an empty models object', async () => {

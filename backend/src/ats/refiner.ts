@@ -3,9 +3,8 @@
 //   1. Keyword injection from the JD (strengthen JD-aligned phrasing)
 //   2. Phrase simplification (action verbs, concision)
 //   3. Alignment validation vs. the MASTER resume (truthfulness guard)
-import OpenAI from 'openai';
 import { leaseNextLlmKey, markKeySuccess, markKeyFailure, isRateLimitError } from '../ai/keyManager.js';
-import { getProviderModel, runLlmCompletion } from '../ai/providerModels.js';
+import { getProviderModel, runLlmCompletion, createLlmClient } from '../ai/providerModels.js';
 import type { TailoredDraft } from './improver.js';
 
 const REFINER_SYSTEM = `You are a resume refiner. Given an initial tailored draft, a job description, and the candidate's MASTER resume, produce a refined, final tailored resume.
@@ -14,15 +13,6 @@ RULES:
 - Simplify phrasing: strong action verbs, concise bullets, quantifiable impact where truthful.
 - You MUST stay truthful to the MASTER resume — do not add skills/experiences absent from it.
 Return STRICT JSON: { "summary": string, "experience": [{ "title": string, "company": string, "startDate": string, "endDate": string, "bullets": string[] }], "education": [{ "degree": string, "institution": string }], "skills": string[] }`;
-
-function getBaseUrl(provider: string): string {
-  switch (provider) {
-    case 'groq': return 'https://api.groq.com/openai/v1';
-    case 'openrouter': return 'https://openrouter.ai/api/v1';
-    case 'gemini': return 'https://generativelanguage.googleapis.com/v1beta/openai';
-    default: return 'https://api.openai.com/v1';
-  }
-}
 
 export interface RefineResult {
   refined: TailoredDraft;
@@ -36,7 +26,7 @@ export async function refineResume(input: {
 }): Promise<RefineResult> {
   const key = await leaseNextLlmKey();
   const model = await getProviderModel(key.provider, { envOverride: process.env.RESUME_TAILOR_MODEL });
-  const client = new OpenAI({ apiKey: key.apiKey, baseURL: getBaseUrl(key.provider) });
+  const client = createLlmClient(key);
   try {
     const resp = await runLlmCompletion(key.provider, model, () =>
       client.chat.completions.create({

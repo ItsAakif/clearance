@@ -47,7 +47,7 @@ describe('providerModels', () => {
   });
 
   it('normalizes unknown providers to groq', async () => {
-    await expect(getProviderModel('anthropic')).resolves.toBe(DEFAULT_MODELS.groq);
+    await expect(getProviderModel('skynet')).resolves.toBe(DEFAULT_MODELS.groq);
   });
 
   it('caches DB reads within the TTL', async () => {
@@ -94,7 +94,10 @@ describe('providerModels', () => {
     expect(settings.models.groq).toBe('custom-groq');
     expect(settings.overrides).toEqual({ groq: 'custom-groq' });
     expect(settings.defaults).toEqual(DEFAULT_MODELS);
-    expect(Object.keys(settings.models).sort()).toEqual(['gemini', 'groq', 'openai', 'openrouter']);
+    expect(Object.keys(settings.models).sort()).toEqual([
+      'anthropic', 'azure-openai', 'deepseek', 'fireworks', 'gemini', 'groq',
+      'lmstudio', 'mistral', 'ollama', 'openai', 'openrouter', 'together', 'zai',
+    ]);
   });
 
   it('runLlmCompletion wraps errors with provider+model and preserves status/code', async () => {

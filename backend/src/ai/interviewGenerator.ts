@@ -3,14 +3,13 @@
 // dynamic baseURL selected from the leased key's provider.
 // Per security.md: never log API keys.
 
-import OpenAI from 'openai';
 import {
   isRateLimitError,
   leaseNextLlmKey,
   markKeyFailure,
   markKeySuccess,
 } from './keyManager.js';
-import { getProviderModel, runLlmCompletion } from './providerModels.js';
+import { getProviderModel, runLlmCompletion, createLlmClient } from './providerModels.js';
 
 export interface GenerateInterviewAnswerInput {
   question: string;
@@ -42,14 +41,7 @@ Return ONLY the answer text, no explanations.`;
 
   const leasedKey = await leaseNextLlmKey();
   const model = await getProviderModel(leasedKey.provider);
-  const baseURL = leasedKey.provider === 'groq'
-    ? 'https://api.groq.com/openai/v1'
-    : leasedKey.provider === 'openrouter'
-    ? 'https://openrouter.ai/api/v1'
-    : leasedKey.provider === 'gemini'
-    ? 'https://generativelanguage.googleapis.com/v1beta/openai'
-    : 'https://api.openai.com/v1';
-  const client = new OpenAI({ apiKey: leasedKey.apiKey, baseURL });
+  const client = createLlmClient(leasedKey);
 
   try {
     const response = await runLlmCompletion(leasedKey.provider, model, () =>

@@ -1,19 +1,9 @@
 // Career-profile extraction from resume text via LLM (BYOK).
 // Extracted from routes/profile.ts to remove duplication and ease reuse.
-import OpenAI from 'openai';
 import { leaseNextLlmKey, markKeySuccess, markKeyFailure, isRateLimitError } from '../ai/keyManager.js';
-import { getProviderModel, runLlmCompletion } from '../ai/providerModels.js';
+import { getProviderModel, runLlmCompletion, createLlmClient } from '../ai/providerModels.js';
 
 const PROFILE_SYSTEM = `Extract career profile facts from this resume. Return JSON: { "targetRoles": string[], "seniority": "junior"|"mid"|"senior"|"staff"|"lead"|"principal"|null, "topSkills": string[], "industries": string[], "summary": string, "inferredMinSalary": number|null }. Only include facts present in the resume; use null for unknowns.`;
-
-function getBaseUrl(provider: string): string {
-  switch (provider) {
-    case 'groq': return 'https://api.groq.com/openai/v1';
-    case 'openrouter': return 'https://openrouter.ai/api/v1';
-    case 'gemini': return 'https://generativelanguage.googleapis.com/v1beta/openai';
-    default: return 'https://api.openai.com/v1';
-  }
-}
 
 export interface ParsedProfileSuggestion {
   suggested: {
@@ -35,7 +25,7 @@ export async function parseProfileFromResume(
 ): Promise<ParsedProfileSuggestion> {
   const key = await leaseNextLlmKey(userId);
   const model = await getProviderModel(key.provider, { envOverride: process.env.PROFILE_PARSE_MODEL });
-  const client = new OpenAI({ apiKey: key.apiKey, baseURL: getBaseUrl(key.provider) });
+  const client = createLlmClient(key);
   try {
     const resp = await runLlmCompletion(key.provider, model, () =>
       client.chat.completions.create({

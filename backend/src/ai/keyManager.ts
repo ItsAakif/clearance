@@ -1,10 +1,11 @@
 // Unified provider key manager (BYOK)
-// Supports LLM providers (groq, openai, openrouter, gemini) and search (tavily).
+// Supports the 13 registry LLM providers (+ `custom:<slug>` ids) and search (tavily/exa).
 // Keys come from the database (AIProviderKey, per-user or system) with env fallback.
 // Per security.md: keys are encrypted at rest (lib/crypto.ts); never log plaintext.
 
 import prisma from '../lib/prisma.js';
 import { decryptSecret } from '../lib/crypto.js';
+import { LLM_PROVIDER_IDS, CUSTOM_PROVIDER_PREFIX } from './providerRegistry.js';
 
 const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 
@@ -17,9 +18,13 @@ export interface KeyRecord {
   provider: string;
   source: KeySource;
   userId: string | null;
+  /** Stored AIProviderKey.label (carries custom/azure base URLs as JSON — see registry). */
+  label?: string | null;
 }
 
-const LLM_PROVIDERS = ['groq', 'openai', 'openrouter', 'gemini'];
+// Single source of truth lives in providerRegistry.ts (LLM_PROVIDER_IDS keeps
+// groq/openai/openrouter/gemini first for fallback stability).
+const LLM_PROVIDERS: readonly string[] = LLM_PROVIDER_IDS;
 const SEARCH_PROVIDERS = ['tavily', 'exa'];
 // Scraping backends (BYOK). firecrawl/crawl4ai are self-hostable; rapidapi
 // covers the hard anti-bot boards (LinkedIn/Indeed/ZipRecruiter/Glassdoor/Bayt).
@@ -71,6 +76,7 @@ function getEnvKeys(provider: string): KeyRecord[] {
     provider,
     source: 'env' as const,
     userId: null,
+    label: null,
   }));
 }
 
@@ -95,6 +101,7 @@ async function getDatabaseKeys(provider: string, userId?: string): Promise<KeyRe
     provider: key.provider,
     source: 'database' as const,
     userId: key.userId,
+    label: key.label,
   }));
 }
 
@@ -164,7 +171,10 @@ export function isRateLimitError(error: unknown): boolean {
 // ---- LLM convenience helpers ----
 
 export function isLlmProvider(provider: string): boolean {
-  return LLM_PROVIDERS.includes(provider.toLowerCase());
+  const normalized = provider.toLowerCase();
+  // Any `custom:<slug>` id is an OpenAI-compatible LLM provider.
+  if (normalized.startsWith(CUSTOM_PROVIDER_PREFIX)) return true;
+  return (LLM_PROVIDERS as readonly string[]).includes(normalized);
 }
 
 export async function leaseNextLlmKey(userId?: string, preferred?: string): Promise<KeyRecord> {

@@ -29,16 +29,14 @@ vi.mock('./keyManager.js', () => ({
   isRateLimitError: () => false,
 }));
 
-vi.mock('./providerModels.js', () => ({
-  getProviderModel: vi.fn(async () => 'test-model'),
-  runLlmCompletion: async (_provider: string, _model: string, run: () => Promise<unknown>) => run(),
-  DEFAULT_MODELS: {
-    groq: 'llama-3.3-70b-versatile',
-    openai: 'gpt-4o-mini',
-    openrouter: 'meta-llama/llama-3.3-70b-instruct',
-    gemini: 'gemini-2.0-flash',
-  },
-}));
+vi.mock('./providerModels.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./providerModels.js')>();
+  return {
+    ...actual,
+    getProviderModel: vi.fn(async () => 'test-model'),
+    runLlmCompletion: async (_provider: string, _model: string, run: () => Promise<unknown>) => run(),
+  };
+});
 
 function llmKey(provider: string) {
   return { id: `test-${provider}`, apiKey: 'test-key', provider, source: 'env' as const, userId: null };

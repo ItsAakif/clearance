@@ -2,20 +2,24 @@
 // Precedence: DB AppSetting `model:<provider>` -> legacy env override -> provider default.
 // Model IDs are NOT secrets: logging them is fine. Never log API keys.
 import prisma from '../lib/prisma.js';
+import {
+  LLM_PROVIDER_IDS,
+  buildOpenAiClient,
+  getProviderBaseUrl,
+  getProviderPreset,
+  isCustomProviderId,
+} from './providerRegistry.js';
 
-export const LLM_MODEL_PROVIDERS = ['groq', 'openai', 'openrouter', 'gemini'] as const;
-export type LlmModelProvider = (typeof LLM_MODEL_PROVIDERS)[number];
+export const LLM_MODEL_PROVIDERS: readonly string[] = LLM_PROVIDER_IDS;
+export type LlmModelProvider = string;
 
-// Live-model defaults. Groq value is verified from the in-repo comment at
-// `ats/llmEvaluator.ts:131-133` (the old `llama-3.1-70b-versatile` was
-// decommissioned by Groq and returns HTTP 400). The other providers are
-// best-effort defaults and are meant to be overridden from Settings.
-export const DEFAULT_MODELS: Record<LlmModelProvider, string> = {
-  groq: 'llama-3.3-70b-versatile',
-  openai: 'gpt-4o-mini',
-  openrouter: 'meta-llama/llama-3.3-70b-instruct',
-  gemini: 'gemini-2.0-flash',
-};
+// Registry-driven defaults (groq/openai/openrouter/gemini values unchanged
+// for back-compat). Providers without a knowable default (azure-openai,
+// lmstudio, custom) resolve to '' — callers must ensure a model override is
+// set for those before leasing.
+export const DEFAULT_MODELS: Record<string, string> = Object.fromEntries(
+  LLM_PROVIDER_IDS.map((id) => [id, getProviderPreset(id)?.defaultModel ?? ''])
+);
 
 export const MODEL_SETTING_PREFIX = 'model:';
 
@@ -30,9 +34,9 @@ const CACHE_TTL_MS = 5000;
 const dbModelCache = new Map<string, { value: string | null; expiresAt: number }>();
 
 function normalizeProvider(provider: string): LlmModelProvider {
-  return (LLM_MODEL_PROVIDERS as readonly string[]).includes(provider)
-    ? (provider as LlmModelProvider)
-    : 'groq';
+  const normalized = provider.toLowerCase();
+  if (isCustomProviderId(normalized)) return normalized;
+  return (LLM_MODEL_PROVIDERS as readonly string[]).includes(normalized) ? normalized : 'groq';
 }
 
 async function readDbModel(provider: LlmModelProvider): Promise<string | null> {
@@ -74,7 +78,7 @@ export async function getProviderModel(
   const explicitFallback = options.fallback?.trim();
   if (explicitFallback) return explicitFallback;
 
-  return DEFAULT_MODELS[normalized];
+  return DEFAULT_MODELS[normalized] ?? '';
 }
 
 export async function setProviderModel(provider: string, model: string): Promise<void> {
@@ -153,4 +157,113 @@ export async function runLlmCompletion<T>(
   } catch (error) {
     throw new LlmModelError(provider, model, error);
   }
+}
+
+// ==================== ANTHROPIC EXECUTION PATH ====================
+// Anthropic is the only registry provider that is NOT OpenAI-compatible
+// (own /v1/messages protocol, x-api-key + anthropic-version headers).
+// Everything else goes through the OpenAI SDK via buildOpenAiClient().
+
+export interface LlmChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export interface LlmChatCreateParams {
+  model: string;
+  messages: LlmChatMessage[];
+  max_tokens?: number;
+  temperature?: number;
+  /** Accepted for OpenAI parity; ignored by the Anthropic path. */
+  response_format?: { type: string };
+}
+
+export interface LlmChatResult {
+  choices: Array<{ message: { content: string | null } }>;
+}
+
+/**
+ * Structural chat client shared by the OpenAI SDK instance and the Anthropic
+ * shim below, so the ~10 call sites can construct one client via
+ * createLlmClient() without caring about the protocol.
+ */
+export interface LlmChatClient {
+  chat: {
+    completions: {
+      create(params: LlmChatCreateParams): Promise<LlmChatResult>;
+    };
+  };
+}
+
+const ANTHROPIC_VERSION = '2023-06-01';
+
+/** Thin /v1/messages fetch — no new npm dependency. */
+export class AnthropicChatClient implements LlmChatClient {
+  chat = {
+    completions: {
+      create: async (params: LlmChatCreateParams): Promise<LlmChatResult> => {
+        const baseUrl = getProviderBaseUrl('anthropic').replace(/\/+$/, '');
+        const systemParts = params.messages
+          .filter((m) => m.role === 'system')
+          .map((m) => m.content);
+        const messages = params.messages
+          .filter((m) => m.role !== 'system')
+          .map((m) => ({ role: m.role, content: m.content }));
+        const body: Record<string, unknown> = {
+          model: params.model,
+          max_tokens: params.max_tokens ?? 1024,
+          messages,
+        };
+        if (systemParts.length > 0) body.system = systemParts.join('\n\n');
+        if (typeof params.temperature === 'number') body.temperature = params.temperature;
+
+        const res = await fetch(`${baseUrl}/messages`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': this.apiKey,
+            'anthropic-version': ANTHROPIC_VERSION,
+          },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          throw Object.assign(new Error(`Anthropic error ${res.status}: ${text.slice(0, 300)}`), {
+            status: res.status,
+          });
+        }
+        const data = (await res.json()) as {
+          content?: Array<{ type?: string; text?: string }>;
+        };
+        const text = (data.content ?? [])
+          .filter((b) => b?.type === 'text' && typeof b.text === 'string')
+          .map((b) => b.text as string)
+          .join('');
+        return { choices: [{ message: { content: text } }] };
+      },
+    },
+  };
+
+  constructor(private readonly apiKey: string) {}
+}
+
+export interface LlmKeyLike {
+  provider: string;
+  apiKey: string;
+  label?: string | null;
+}
+
+/**
+ * Build the chat client for a leased key, branching on the registry protocol:
+ * Anthropic-protocol providers get the thin /v1/messages shim, everything
+ * else gets the OpenAI SDK pointed at the registry base URL (Azure's
+ * `api-key` header handled inside buildOpenAiClient).
+ */
+export function createLlmClient(key: LlmKeyLike): LlmChatClient {
+  const normalized = key.provider.toLowerCase();
+  const preset = isCustomProviderId(normalized) ? undefined : getProviderPreset(normalized);
+  if (preset?.protocol === 'anthropic') {
+    return new AnthropicChatClient(key.apiKey);
+  }
+  return buildOpenAiClient(key.provider, key.apiKey, key.label ?? undefined) as unknown as LlmChatClient;
 }

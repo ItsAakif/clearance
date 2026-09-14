@@ -1,8 +1,7 @@
 // RM-01 — Improver (pass 1 of the multi-pass refinement pipeline).
 // Produces the INITIAL tailored draft from a master resume + job description.
-import OpenAI from 'openai';
 import { leaseNextLlmKey, markKeySuccess, markKeyFailure, isRateLimitError } from '../ai/keyManager.js';
-import { getProviderModel, runLlmCompletion } from '../ai/providerModels.js';
+import { getProviderModel, runLlmCompletion, createLlmClient } from '../ai/providerModels.js';
 
 const IMPROVER_SYSTEM = `You are an expert resume writer. Given a master resume and a target job description, produce an INITIAL tailored draft.
 RULES:
@@ -11,15 +10,6 @@ RULES:
 - Keep the structure: summary, experience (with bullets), education, skills.
 - Improve bullet phrasing with strong action verbs and quantifiable impact where truthful.
 Return STRICT JSON: { "summary": string, "experience": [{ "title": string, "company": string, "startDate": string, "endDate": string, "bullets": string[] }], "education": [{ "degree": string, "institution": string }], "skills": string[] }`;
-
-function getBaseUrl(provider: string): string {
-  switch (provider) {
-    case 'groq': return 'https://api.groq.com/openai/v1';
-    case 'openrouter': return 'https://openrouter.ai/api/v1';
-    case 'gemini': return 'https://generativelanguage.googleapis.com/v1beta/openai';
-    default: return 'https://api.openai.com/v1';
-  }
-}
 
 export interface TailoredDraft {
   summary: string;
@@ -39,7 +29,7 @@ export async function improveResumeForJob(input: {
 
   const key = await leaseNextLlmKey();
   const model = await getProviderModel(key.provider, { envOverride: process.env.RESUME_TAILOR_MODEL });
-  const client = new OpenAI({ apiKey: key.apiKey, baseURL: getBaseUrl(key.provider) });
+  const client = createLlmClient(key);
   try {
     const resp = await runLlmCompletion(key.provider, model, () =>
       client.chat.completions.create({

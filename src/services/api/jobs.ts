@@ -137,7 +137,9 @@ export interface UpdateApplicationEventInput {
 
 export interface ApiKey {
   id: string;
-  provider: 'openai' | 'groq' | 'openrouter' | 'gemini' | 'tavily' | 'exa' | 'adzuna' | 'jooble' | 'careerjet' | 'firecrawl' | 'crawl4ai' | 'rapidapi';
+  // Registry LLM ids (groq/openai/…/lmstudio), `custom:<slug>`, or non-LLM
+  // providers (tavily/exa/adzuna/jooble/careerjet/firecrawl/crawl4ai/rapidapi).
+  provider: string;
   label?: string;
   maskedKey: string;
   isActive: boolean;
@@ -187,7 +189,7 @@ export const applicationsApi = {
 // ==================== BYOK KEYS ====================
 export const keysApi = {
   list: () => apiClient.get<ApiKey[]>('/keys'),
-  create: (provider: ApiKey['provider'], apiKey: string, label?: string) =>
+  create: (provider: string, apiKey: string, label?: string) =>
     apiClient.post<ApiKey>('/keys', { provider, apiKey, label }),
   remove: (id: string) => apiClient.delete(`/keys/${id}`),
 };

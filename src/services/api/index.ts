@@ -14,5 +14,5 @@ export type {
   JobSort, JobWorkMode, JobSearchFilters, JobMatchBreakdown, NormalizedJobInsights
 } from "./jobs";
 export type { InterviewAnswerCategory, GenerateInterviewAnswerInput, GenerateInterviewAnswerResponse } from "./ai";
-export type { ModelSettings, LlmModelProvider } from "./settings";
+export type { ModelSettings, LlmModelProvider, ProviderPreset, ProviderGroup } from "./settings";
 export { apiClient, ApiClientError } from "./client";

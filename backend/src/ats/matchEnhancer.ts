@@ -6,8 +6,7 @@
 
 import { z } from 'zod';
 import { leaseNextLlmKey, markKeySuccess, markKeyFailure, isRateLimitError, type KeyRecord } from '../ai/keyManager.js';
-import { getProviderModel, runLlmCompletion } from '../ai/providerModels.js';
-import OpenAI from 'openai';
+import { getProviderModel, runLlmCompletion, createLlmClient, type LlmChatClient } from '../ai/providerModels.js';
 
 const EnhancerSchema = z.object({
   tailoringTips: z.array(z.string()).max(6),
@@ -16,7 +15,7 @@ const EnhancerSchema = z.object({
 type EnhancerResult = z.infer<typeof EnhancerSchema>;
 
 async function callWithRetry(
-  client: OpenAI,
+  client: LlmChatClient,
   prompt: string,
   key: KeyRecord,
   model: string,
@@ -58,16 +57,7 @@ export async function enhanceMatchWithLLM(
 
   const model = await getProviderModel(key.provider, { envOverride: process.env.ATS_MODEL });
 
-  const baseURL =
-    key.provider === 'groq'
-      ? 'https://api.groq.com/openai/v1'
-      : key.provider === 'openrouter'
-      ? 'https://openrouter.ai/api/v1'
-      : key.provider === 'gemini'
-      ? 'https://generativelanguage.googleapis.com/v1beta/openai'
-      : 'https://api.openai.com/v1';
-
-  const client = new OpenAI({ apiKey: key.apiKey, baseURL });
+  const client = createLlmClient(key);
 
   const prompt =
     `RESUME (abridged):\n${resumeText.slice(0, 1500)}\n\n` +

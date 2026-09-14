@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -13,6 +13,8 @@ import {
   Trash2,
   CheckCircle2,
   BookOpen,
+  Plus,
+  Pencil,
   Cpu,
 } from "lucide-react";
 import { AppLayout } from "@/components/layout";
@@ -22,6 +24,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Dialog,
   DialogContent,
@@ -45,9 +55,15 @@ import { useAuth, useDeleteAccount, useLogout, useResendVerificationEmail, useUp
 import { useToast } from "@/hooks/use-toast";
 import { useApiKeys, useCreateApiKey, useDeleteApiKey } from "@/hooks/useJobs";
 import type { ApiKey } from "@/services/api";
-import { useModelSettings, useUpdateModelSettings } from "@/hooks/useSettings";
-import { LLM_MODEL_PROVIDERS } from "@/services/api";
-import type { LlmModelProvider } from "@/services/api";
+import {
+  useModelSettings,
+  useProviders,
+  useProviderModels,
+  useSetProviderModel,
+  useUpdateModelSettings,
+  mergePresetAndFetched,
+} from "@/hooks/useSettings";
+import type { ProviderPreset } from "@/services/api";
 
 // Setup Guide: which provider unlocks what, at what cost, step-by-step setup,
 // and the exact key format expected. Ordered by how essential each is.
@@ -75,7 +91,7 @@ const SETUP_PROVIDERS: SetupProvider[] = [
       "Go to console.groq.com and create a free account.",
       "Open API Keys → Create Key.",
       "Copy the key (starts with ggsk-).",
-      "In Clearance: API Keys → Add Key → Groq → paste it.",
+      "In Clearance: AI Providers → Add provider → Groq → paste it.",
     ],
     link: "https://console.groq.com/keys",
     linkLabel: "console.groq.com/keys",
@@ -183,6 +199,7 @@ const PROVIDER_SETUP_LINK: Record<string, string> = {
   openrouter: "https://openrouter.ai/keys",
   gemini: "https://aistudio.google.com/app/apikey",
   tavily: "https://tavily.com",
+  exa: "https://exa.ai/dashboard/api-keys",
   adzuna: "https://developer.adzuna.com/",
   jooble: "https://jooble.org/api/",
   careerjet: "https://www.careerjet.com/partners/",
@@ -191,14 +208,12 @@ const PROVIDER_SETUP_LINK: Record<string, string> = {
   rapidapi: "https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch/pricing",
 };
 
-// All configurable BYOK providers shown as rows. `important` marks the ones
-// most users need (shown with a *). Users add only what they want.
+// Non-LLM key rows (search / aggregators / scrapers). LLM providers moved to
+// the unified "AI Providers" card below. `important` marks the ones most
+// users need (shown with a *).
 const KEY_PROVIDERS: { provider: string; label: string; important: boolean }[] = [
-  { provider: "groq", label: "Groq (LLM)", important: true },
-  { provider: "openai", label: "OpenAI (LLM)", important: false },
-  { provider: "openrouter", label: "OpenRouter (LLM)", important: false },
-  { provider: "gemini", label: "Gemini (LLM)", important: false },
   { provider: "tavily", label: "Tavily (Search)", important: false },
+  { provider: "exa", label: "Exa (Search)", important: false },
   { provider: "adzuna", label: "Adzuna (Job Aggregator)", important: true },
   { provider: "jooble", label: "Jooble (Job Aggregator)", important: false },
   { provider: "careerjet", label: "Careerjet (Job Aggregator)", important: false },
@@ -207,12 +222,518 @@ const KEY_PROVIDERS: { provider: string; label: string; important: boolean }[] =
   { provider: "rapidapi", label: "RapidAPI (Hard Boards)", important: true },
 ];
 
-const MODEL_PROVIDER_LABELS: Record<LlmModelProvider, string> = {
-  groq: "Groq",
-  openai: "OpenAI",
-  openrouter: "OpenRouter",
-  gemini: "Gemini",
-};
+// ==================== AI PROVIDERS (unified picker) ====================
+// Kilo-style flow: configured-provider rows → "Add provider" (searchable,
+// grouped dialog) → key entry → model picker (fetched list merged
+// presets-first, manual input fallback).
+
+function prettifySlug(slug: string): string {
+  return slug
+    .split("-")
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
+
+function slugifyName(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+}
+
+/** Providers whose key must be stored together with an endpoint URL. */
+function needsEndpoint(providerId: string): boolean {
+  return providerId === "azure-openai" || providerId === "custom:new" || providerId.startsWith("custom:");
+}
+
+interface KeyTarget {
+  /** Preset id, existing `custom:<slug>`, or `"custom:new"`. */
+  providerId: string;
+  preset?: ProviderPreset;
+  isChange: boolean;
+}
+
+interface ModelTarget {
+  providerId: string;
+  preset: ProviderPreset;
+  /** Just-saved key, so the first model fetch works before a refetch. */
+  pendingKey?: string;
+}
+
+function AiProvidersCard() {
+  const { toast } = useToast();
+  const { data: apiKeys = [] } = useApiKeys();
+  const createKey = useCreateApiKey();
+  const deleteKey = useDeleteApiKey();
+  const { data: providers = [], isLoading: providersLoading } = useProviders();
+  const { data: modelSettings } = useModelSettings();
+  const setModel = useSetProviderModel();
+  const updateModels = useUpdateModelSettings();
+
+  const [addOpen, setAddOpen] = useState(false);
+  const [keyTarget, setKeyTarget] = useState<KeyTarget | null>(null);
+  const [modelTarget, setModelTarget] = useState<ModelTarget | null>(null);
+
+  // Key dialog fields
+  const [keyInput, setKeyInput] = useState("");
+  const [endpointInput, setEndpointInput] = useState("");
+  const [customNameInput, setCustomNameInput] = useState("");
+  const [savingKey, setSavingKey] = useState(false);
+
+  // Model dialog manual fallback
+  const [manualModel, setManualModel] = useState("");
+  useEffect(() => {
+    setManualModel("");
+  }, [modelTarget?.providerId]);
+
+  // Custom providers known only via stored keys (backend has no preset).
+  const allProviders: ProviderPreset[] = useMemo(() => {
+    const known = new Set(providers.map((p) => p.id));
+    const customs: ProviderPreset[] = [];
+    for (const k of apiKeys as ApiKey[]) {
+      if (k.provider.startsWith("custom:") && !known.has(k.provider)) {
+        known.add(k.provider);
+        customs.push({
+          id: k.provider,
+          label: prettifySlug(k.provider.slice("custom:".length)),
+          baseUrl: "",
+          keyPrefix: null,
+          authStyle: "bearer",
+          protocol: "openai",
+          defaultModel: "",
+          presetModels: [],
+          fetchModels: true,
+          group: "other",
+        });
+      }
+    }
+    return [...providers, ...customs];
+  }, [providers, apiKeys]);
+
+  const presetById = useMemo(() => new Map(allProviders.map((p) => [p.id, p])), [allProviders]);
+  const grouped = useMemo(
+    () => ({
+      recommended: allProviders.filter((p) => p.group === "recommended"),
+      local: allProviders.filter((p) => p.group === "local"),
+      other: allProviders.filter((p) => p.group === "other"),
+    }),
+    [allProviders]
+  );
+
+  const modelQuery = useProviderModels(
+    modelTarget?.providerId ?? null,
+    modelTarget?.pendingKey,
+    !!modelTarget && !!modelTarget.preset.fetchModels
+  );
+  const mergedModels = modelTarget
+    ? mergePresetAndFetched(modelTarget.preset, modelQuery.data?.models)
+    : [];
+
+  const openKeyDialog = (providerId: string, isChange: boolean) => {
+    setKeyInput("");
+    setEndpointInput("");
+    setCustomNameInput("");
+    setKeyTarget({ providerId, preset: presetById.get(providerId), isChange });
+  };
+
+  const handleSaveKey = async () => {
+    if (!keyTarget) return;
+    const isCustomNew = keyTarget.providerId === "custom:new";
+    let providerId = keyTarget.providerId;
+    let label: string | undefined;
+
+    if (isCustomNew) {
+      const slug = slugifyName(customNameInput);
+      if (!slug) {
+        toast({ title: "Name required", description: "Give the custom provider a name.", variant: "destructive" });
+        return;
+      }
+      providerId = `custom:${slug}`;
+    }
+    if (needsEndpoint(isCustomNew ? "custom:new" : providerId)) {
+      if (!endpointInput.trim()) {
+        toast({
+          title: "Endpoint required",
+          description: isCustomNew
+            ? "Enter the OpenAI-compatible base URL (e.g. http://localhost:11434/v1)."
+            : "Enter the Azure OpenAI endpoint (stored with the key).",
+          variant: "destructive",
+        });
+        return;
+      }
+      // Endpoint persists in AIProviderKey.label as JSON (registry convention).
+      label = JSON.stringify({ baseUrl: endpointInput.trim() });
+    }
+    if (!keyInput.trim()) {
+      toast({ title: "Key required", description: "Paste the provider API key.", variant: "destructive" });
+      return;
+    }
+
+    setSavingKey(true);
+    try {
+      if (keyTarget.isChange) {
+        const existing = (apiKeys as ApiKey[]).filter((k) => k.provider === providerId);
+        for (const k of existing) await deleteKey.mutateAsync(k.id);
+      }
+      await createKey.mutateAsync({ provider: providerId, apiKey: keyInput.trim(), label });
+      const preset = presetById.get(providerId) ?? {
+        id: providerId,
+        label: prettifySlug(providerId.replace(/^custom:/, "")),
+        baseUrl: "",
+        keyPrefix: null,
+        authStyle: "bearer",
+        protocol: "openai",
+        defaultModel: "",
+        presetModels: [],
+        fetchModels: true,
+        group: "other",
+      } as ProviderPreset;
+      setKeyTarget(null);
+      setModelTarget({ providerId, preset, pendingKey: keyInput.trim() });
+    } catch {
+      // toasts handled by the key hooks
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
+  const handleRemoveProvider = async (providerId: string) => {
+    try {
+      const existing = (apiKeys as ApiKey[]).filter((k) => k.provider === providerId);
+      for (const k of existing) await deleteKey.mutateAsync(k.id);
+      // Clear the model override too (empty string = use default).
+      await updateModels.mutateAsync({ [providerId]: "" });
+    } catch {
+      // toasts handled by the hooks
+    }
+  };
+
+  const handleSaveModel = async (model: string) => {
+    if (!modelTarget) return;
+    try {
+      await setModel.mutateAsync({ providerId: modelTarget.providerId, model: model.trim() });
+      setModelTarget(null);
+    } catch {
+      // toast handled by useSetProviderModel
+    }
+  };
+
+  const keyTargetLabel = keyTarget
+    ? keyTarget.providerId === "custom:new"
+      ? "Custom provider"
+      : (keyTarget.preset?.label ?? prettifySlug(keyTarget.providerId.replace(/^custom:/, "")))
+    : "";
+
+  return (
+    <Card className="p-6">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Cpu className="h-5 w-5 text-muted-foreground" />
+          <h2 className="font-semibold text-foreground">AI Providers</h2>
+        </div>
+        <Button size="sm" onClick={() => setAddOpen(true)}>
+          <Plus className="mr-1 h-4 w-4" /> Add provider
+        </Button>
+      </div>
+
+      <p className="mb-4 text-sm text-muted-foreground">
+        Connect an LLM provider, then pick the model it uses. Legacy{" "}
+        <code>ATS_MODEL</code>, <code>RESUME_TAILOR_MODEL</code> and <code>RESUME_PARSE_MODEL</code>{" "}
+        env vars are still honored when no model is set here.
+      </p>
+
+      {providersLoading ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading providers…
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {allProviders.map((p) => {
+            const stored = (apiKeys as ApiKey[]).filter((k) => k.provider === p.id);
+            const selected = modelSettings?.models[p.id] ?? p.defaultModel ?? "";
+            const isCustom = !!modelSettings?.overrides?.[p.id];
+            return (
+              <div key={p.id} className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-foreground">{p.label}</span>
+                    {stored.length > 0 ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] text-muted-foreground">no key</Badge>
+                    )}
+                    {isCustom ? (
+                      <Badge variant="secondary" className="text-[10px]">Custom model</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] text-muted-foreground">Default model</Badge>
+                    )}
+                  </div>
+                  <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                    {stored.length > 0 ? stored[0].maskedKey : "Not connected"}
+                    {selected ? ` · ${selected}` : ""}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {stored.length > 0 ? (
+                    <>
+                      <Button variant="ghost" size="sm" onClick={() => openKeyDialog(p.id, true)}>
+                        <Pencil className="mr-1 h-3.5 w-3.5" /> Change
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setModelTarget({ providerId: p.id, preset: p })
+                        }
+                      >
+                        Model
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground"
+                        onClick={() => handleRemoveProvider(p.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </>
+                  ) : (
+                    <Button variant="outline" size="sm" onClick={() => openKeyDialog(p.id, false)}>
+                      Connect
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Add provider picker */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="p-0">
+          <DialogHeader className="px-4 pt-4">
+            <DialogTitle>Add provider</DialogTitle>
+            <DialogDescription>Search providers, then enter a key and pick a model.</DialogDescription>
+          </DialogHeader>
+          <Command>
+            <CommandInput placeholder="Search providers…" />
+            <CommandList className="max-h-72">
+              <CommandEmpty>No provider found.</CommandEmpty>
+              <CommandGroup heading="Recommended">
+                {grouped.recommended.map((p) => (
+                  <CommandItem
+                    key={p.id}
+                    value={`${p.label} ${p.id}`}
+                    onSelect={() => {
+                      setAddOpen(false);
+                      openKeyDialog(p.id, false);
+                    }}
+                  >
+                    {p.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              <CommandGroup heading="Local">
+                {grouped.local.map((p) => (
+                  <CommandItem
+                    key={p.id}
+                    value={`${p.label} ${p.id}`}
+                    onSelect={() => {
+                      setAddOpen(false);
+                      openKeyDialog(p.id, false);
+                    }}
+                  >
+                    {p.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              <CommandGroup heading="Other">
+                {grouped.other.map((p) => (
+                  <CommandItem
+                    key={p.id}
+                    value={`${p.label} ${p.id}`}
+                    onSelect={() => {
+                      setAddOpen(false);
+                      openKeyDialog(p.id, false);
+                    }}
+                  >
+                    {p.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              <CommandGroup heading="Custom">
+                <CommandItem
+                  value="Custom OpenAI-compatible provider"
+                  onSelect={() => {
+                    setAddOpen(false);
+                    openKeyDialog("custom:new", false);
+                  }}
+                >
+                  Custom provider…
+                </CommandItem>
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </DialogContent>
+      </Dialog>
+
+      {/* Key entry dialog */}
+      <Dialog open={!!keyTarget} onOpenChange={(open) => !open && setKeyTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{keyTarget?.isChange ? `Change key — ${keyTargetLabel}` : `Connect ${keyTargetLabel}`}</DialogTitle>
+            <DialogDescription>
+              Keys are encrypted at rest and never shared. After saving, pick the model to use.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {keyTarget?.providerId === "custom:new" && (
+              <div className="grid gap-2">
+                <Label htmlFor="custom-name">Provider name</Label>
+                <Input
+                  id="custom-name"
+                  value={customNameInput}
+                  onChange={(e) => setCustomNameInput(e.target.value)}
+                  placeholder="My LLM server"
+                />
+              </div>
+            )}
+            {keyTarget && needsEndpoint(keyTarget.providerId) && (
+              <div className="grid gap-2">
+                <Label htmlFor="provider-endpoint">
+                  {keyTarget.providerId === "azure-openai" ? "Azure endpoint" : "Base URL"}
+                </Label>
+                <Input
+                  id="provider-endpoint"
+                  value={endpointInput}
+                  onChange={(e) => setEndpointInput(e.target.value)}
+                  placeholder={
+                    keyTarget.providerId === "azure-openai"
+                      ? "https://{resource}.openai.azure.com/openai/v1"
+                      : "https://my-host:1234/v1"
+                  }
+                  spellCheck={false}
+                  className="font-mono text-sm"
+                />
+                {keyTarget.providerId === "azure-openai" && (
+                  <p className="text-xs text-muted-foreground">
+                    The model field takes your deployment name.
+                  </p>
+                )}
+              </div>
+            )}
+            <div className="grid gap-2">
+              <Label htmlFor="provider-key">API key</Label>
+              <Input
+                id="provider-key"
+                type="password"
+                autoComplete="off"
+                value={keyInput}
+                onChange={(e) => setKeyInput(e.target.value)}
+                placeholder={
+                  keyTarget?.preset?.keyPrefix
+                    ? `Starts with ${keyTarget.preset.keyPrefix}…`
+                    : "Paste key…"
+                }
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setKeyTarget(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveKey} disabled={savingKey}>
+              {savingKey ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…
+                </>
+              ) : (
+                "Save & pick model"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Model picker dialog */}
+      <Dialog open={!!modelTarget} onOpenChange={(open) => !open && setModelTarget(null)}>
+        <DialogContent className="p-0">
+          <DialogHeader className="px-4 pt-4">
+            <DialogTitle>Pick a model</DialogTitle>
+            <DialogDescription>
+              {modelTarget && (presetById.get(modelTarget.providerId)?.label ?? modelTarget.providerId)}
+              {modelTarget?.preset.fetchModels
+                ? " — fetched live from the provider, presets first."
+                : " — this provider has no model list; enter the model (deployment) name."}
+            </DialogDescription>
+          </DialogHeader>
+          <Command>
+            <CommandInput placeholder="Search models…" />
+            <CommandList className="max-h-72">
+              {modelQuery.isFetching ? (
+                <p className="flex items-center gap-2 px-4 py-6 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Fetching models…
+                </p>
+              ) : (
+                <>
+                  <CommandEmpty>
+                    No match — type the model id below and save it manually.
+                  </CommandEmpty>
+                  {mergedModels.map((m) => (
+                    <CommandItem
+                      key={m}
+                      value={m}
+                      onSelect={() => handleSaveModel(m)}
+                      className="font-mono text-sm"
+                    >
+                      {m}
+                    </CommandItem>
+                  ))}
+                  {modelQuery.isError && mergedModels.length === 0 && (
+                    <p className="px-4 py-2 text-xs text-muted-foreground">
+                      Live fetch failed — enter the model id manually below.
+                    </p>
+                  )}
+                </>
+              )}
+            </CommandList>
+          </Command>
+          <div className="flex items-center gap-2 border-t border-border p-4">
+            <Input
+              value={manualModel}
+              onChange={(e) => setManualModel(e.target.value)}
+              placeholder="Or type a model id…"
+              spellCheck={false}
+              className="font-mono text-sm"
+            />
+            <Button
+              variant="outline"
+              onClick={() => handleSaveModel(manualModel)}
+              disabled={!manualModel.trim() || setModel.isPending}
+            >
+              Save
+            </Button>
+          </div>
+          {modelTarget && modelSettings?.overrides?.[modelTarget.providerId] && (
+            <div className="flex justify-end border-t border-border p-4 pt-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleSaveModel("")}
+                disabled={setModel.isPending}
+              >
+                Reset to default
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -233,28 +754,6 @@ export default function SettingsPage() {
   // Per-provider input values for the "list of rows + Save All" form.
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
   const [savingKeys, setSavingKeys] = useState(false);
-
-  // AI Models (per-provider)
-  const { data: modelSettings } = useModelSettings();
-  const updateModels = useUpdateModelSettings();
-  const [modelInputs, setModelInputs] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    if (!modelSettings) return;
-    setModelInputs({ ...modelSettings.overrides });
-  }, [modelSettings]);
-
-  const handleSaveModels = async () => {
-    const payload: Partial<Record<LlmModelProvider, string>> = {};
-    for (const provider of LLM_MODEL_PROVIDERS) {
-      payload[provider] = (modelInputs[provider] ?? "").trim();
-    }
-    try {
-      await updateModels.mutateAsync(payload);
-    } catch {
-      // toast handled by useUpdateModelSettings.onError
-    }
-  };
 
   // Save every non-empty key input. Existing keys for that provider are kept;
   // new/changed values are created (backend stores per provider).
@@ -442,7 +941,7 @@ export default function SettingsPage() {
 
                 <div className="mt-5 flex items-center justify-between">
                   <p className="text-xs text-muted-foreground">
-                    Saved keys: {apiKeys.length}
+                    Saved keys: {(apiKeys as ApiKey[]).filter((k) => KEY_PROVIDERS.some((r) => r.provider === k.provider)).length}
                   </p>
                   <Button onClick={handleSaveAllKeys} disabled={savingKeys || Object.values(keyInputs).every((v) => !v.trim())}>
                     {savingKeys ? (
@@ -455,11 +954,11 @@ export default function SettingsPage() {
                   </Button>
                 </div>
 
-                {apiKeys.length > 0 && (
+                {(apiKeys as ApiKey[]).filter((k) => KEY_PROVIDERS.some((r) => r.provider === k.provider)).length > 0 && (
                   <div className="mt-4 border-t border-border pt-4">
                     <p className="mb-2 text-xs font-medium text-muted-foreground">Stored keys (remove any)</p>
                     <div className="space-y-2">
-                      {apiKeys.map((k: ApiKey) => (
+                      {(apiKeys as ApiKey[]).filter((k) => KEY_PROVIDERS.some((r) => r.provider === k.provider)).map((k: ApiKey) => (
                         <div key={k.id} className="flex items-center justify-between rounded-lg border border-border p-3">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
@@ -483,59 +982,13 @@ export default function SettingsPage() {
               </Card>
             </motion.div>
 
-            {/* AI Models (per-provider) */}
+            {/* AI Providers (unified picker: key + model per LLM provider) */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.27 }}
             >
-              <Card className="p-6">
-                <div className="mb-4 flex items-center gap-2">
-                  <Cpu className="h-5 w-5 text-muted-foreground" />
-                  <h2 className="font-semibold text-foreground">AI Models</h2>
-                </div>
-                <p className="mb-4 text-sm text-muted-foreground">
-                  Choose which model each LLM provider uses. Leave a field empty to use the
-                  built-in default. If a provider retires a model, update it here without a
-                  redeploy. Legacy <code>ATS_MODEL</code>, <code>RESUME_TAILOR_MODEL</code> and{" "}
-                  <code>RESUME_PARSE_MODEL</code> env vars are still honored when no value is set here.
-                </p>
-                <div className="space-y-3">
-                  {LLM_MODEL_PROVIDERS.map((provider) => (
-                    <div key={provider} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
-                      <div className="min-w-0">
-                        <label className="text-sm font-medium text-foreground">
-                          {MODEL_PROVIDER_LABELS[provider]}
-                        </label>
-                        <Input
-                          autoComplete="off"
-                          spellCheck={false}
-                          value={modelInputs[provider] ?? ""}
-                          onChange={(e) => setModelInputs((prev) => ({ ...prev, [provider]: e.target.value }))}
-                          placeholder={`Default: ${modelSettings?.defaults[provider] ?? ""}`}
-                          className="mt-1 font-mono text-sm"
-                        />
-                      </div>
-                      {modelSettings?.overrides?.[provider] ? (
-                        <Badge variant="secondary" className="text-[10px]">Custom</Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-[10px] text-muted-foreground">Default</Badge>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-5 flex justify-end">
-                  <Button onClick={handleSaveModels} disabled={updateModels.isPending || !modelSettings}>
-                    {updateModels.isPending ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…
-                      </>
-                    ) : (
-                      "Save Models"
-                    )}
-                  </Button>
-                </div>
-              </Card>
+              <AiProvidersCard />
             </motion.div>
 
             {/* Setup Guide (provider -> features -> cost -> link) */}
@@ -551,8 +1004,8 @@ export default function SettingsPage() {
                 </div>
                 <p className="mb-4 text-sm text-muted-foreground">
                   Clearance is self-hosted and bring-your-own-key (BYOK). Add only the providers for the
-                  features you want - none are required to browse the built-in job boards. Click "Add Key"
-                  in the API Keys card above to connect one.
+                  features you want - none are required to browse the built-in job boards. Click "Add provider"
+                  in the AI Providers card above to connect an LLM.
                 </p>
                 <div className="space-y-3">
                   {SETUP_PROVIDERS.map((p) => (
