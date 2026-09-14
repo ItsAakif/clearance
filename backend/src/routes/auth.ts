@@ -26,7 +26,7 @@ router.post('/login', async (req, res) => {
       return;
     }
 
-    const user = await prisma.user.findFirst({
+    let user = await prisma.user.findFirst({
       select: {
         id: true,
         email: true,
@@ -36,6 +36,28 @@ router.post('/login', async (req, res) => {
         updatedAt: true,
       },
     });
+
+    if (!user) {
+      try {
+        user = await prisma.user.create({
+          data: {
+            email: 'local@clearance.invalid',
+            name: 'Clearance User',
+          },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            avatarUrl: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+        console.log('[Auth] Provisioned canonical application user');
+      } catch {
+        user = null;
+      }
+    }
 
     if (!user) {
       res.status(500).json({ error: 'Application user is not configured' });

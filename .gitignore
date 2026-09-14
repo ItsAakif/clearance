@@ -37,6 +37,9 @@ backend/.env.*.local
 dist/
 backend/dist/
 
+# Local embedded Postgres data (see backend `npm run db:local`)
+backend/.data/
+
 # Junk files
 nul
 *.lnk

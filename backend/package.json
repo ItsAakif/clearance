@@ -12,7 +12,8 @@
     "db:migrate": "dotenv -e ../.env -- prisma migrate dev",
     "db:push": "dotenv -e ../.env -- prisma db push",
     "db:studio": "dotenv -e ../.env -- prisma studio",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "db:local": "tsx scripts/local-db.ts"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -25,6 +26,7 @@
     "docx": "^8.5.0",
     "docxtemplater": "^3.67.6",
     "dotenv": "^16.4.5",
+    "embedded-postgres": "^18.4.0-beta.17",
     "express": "^4.21.0",
     "express-rate-limit": "^7.4.0",
     "google-auth-library": "^10.5.0",
@@ -50,6 +52,7 @@
     "@types/nodemailer": "^7.0.11",
     "@types/supertest": "^7.2.0",
     "@types/uuid": "^10.0.0",
+    "dotenv-cli": "^11.0.0",
     "pizzip": "^3.2.0",
     "prisma": "^5.22.0",
     "supertest": "^7.2.2",
