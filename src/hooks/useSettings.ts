@@ -1,12 +1,18 @@
 // React Query hooks for the AI provider picker + per-provider model settings.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { settingsApi } from '@/services/api';
-import type { ModelSettings, ProviderPreset } from '@/services/api';
+import { catalogueApi, settingsApi } from '@/services/api';
+import type {
+  CatalogueSnapshotImportResult,
+  CatalogueSnapshotSyncResult,
+  ModelSettings,
+  ProviderPreset,
+} from '@/services/api';
 import { keysQueryKey } from './useJobs';
 import { toast } from './use-toast';
 
 export const modelSettingsQueryKey = ['settings', 'models'] as const;
 export const providersQueryKey = ['providers'] as const;
+export const catalogueStatusQueryKey = ['settings', 'catalogue'] as const;
 
 export function useProviders() {
   return useQuery({ queryKey: providersQueryKey, queryFn: () => settingsApi.getProviders() });
@@ -75,4 +81,53 @@ export function useInvalidateProviderKeys() {
     qc.invalidateQueries({ queryKey: providersQueryKey });
     qc.invalidateQueries({ queryKey: modelSettingsQueryKey });
   };
+}
+
+/** Catalogue total + `catalogue:importedAt` for the Settings snapshot card. */
+export function useCatalogueStatus() {
+  return useQuery({
+    queryKey: catalogueStatusQueryKey,
+    queryFn: () => catalogueApi.status(),
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * One-click sync of the configured daily feed. The card owns the inline
+ * success/quiet-not-published message; the hook only refreshes both the status
+ * and the unknown-keyed catalogue pages prefix.
+ */
+export function useSyncCatalogue() {
+  const qc = useQueryClient();
+  return useMutation<CatalogueSnapshotSyncResult>({
+    mutationFn: () => catalogueApi.sync(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: catalogueStatusQueryKey });
+      qc.invalidateQueries({ queryKey: ['jobs', 'catalogue'] });
+    },
+  });
+}
+
+/**
+ * Import a snapshot from the Settings card. The invalidation includes
+ * the unknown-keyed catalogue pages prefix so browse results refresh too.
+ */
+export function useImportCatalogueSnapshot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { snapshot: File; manifest: string }) =>
+      catalogueApi.importSnapshot(vars.snapshot, vars.manifest),
+    onSuccess: (data: CatalogueSnapshotImportResult) => {
+      qc.invalidateQueries({ queryKey: catalogueStatusQueryKey });
+      qc.invalidateQueries({ queryKey: ['jobs', 'catalogue'] });
+      toast({
+        title: 'Catalogue snapshot imported',
+        description:
+          `${data.imported} listing(s) imported, ${data.reactivated} reactivated, ` +
+          `${data.skipped} skipped.`,
+      });
+    },
+    onError: (e: Error) =>
+      toast({ title: 'Snapshot import failed', description: e.message, variant: 'destructive' }),
+  });
 }

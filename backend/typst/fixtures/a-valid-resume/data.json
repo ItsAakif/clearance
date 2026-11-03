@@ -1,0 +1,73 @@
+{
+  "basics": {
+    "name": "Ada Lovelace",
+    "role": "Staff Platform Engineer",
+    "contact": {
+      "email": "ada@example.org",
+      "phone": "+44 20 7946 0018",
+      "location": "London, UK"
+    }
+  },
+  "summary": "Platform engineer with eleven years spent making other people's deploys boring: build isolation, deterministic artefacts, and observability that answers questions instead of generating dashboards. Comfortable owning a system end to end, and comfortable saying no to a dependency.",
+  "experience": [
+    {
+      "role": "Staff Platform Engineer",
+      "company": "Meridian Data",
+      "period": "2022 - present",
+      "location": "London",
+      "highlights": [
+        "Cut median build time from 41 minutes to 6 by making the pipeline hermetic and pinning every toolchain input by digest.",
+        "Introduced a one-container-per-render isolation model, which removed an entire class of cross-job leakage reports.",
+        "Wrote the internal reproducibility standard now cited by four other teams."
+      ]
+    },
+    {
+      "role": "Senior Site Reliability Engineer",
+      "company": "Halcyon Payments",
+      "period": "2019 - 2022",
+      "location": "Dublin",
+      "highlights": [
+        "Ran the on-call rotation for a ledger processing 1.4M transactions per day with a 99.98% availability target.",
+        "Reduced paging volume by 62% by fixing 9 alert rules that had never once indicated a user-visible problem."
+      ]
+    },
+    {
+      "role": "Backend Engineer",
+      "company": "Northgate Software",
+      "period": "2015 - 2019",
+      "location": "Manchester",
+      "highlights": [
+        "Built the first version of the job-ingestion service, still in production.",
+        "Mentored four engineers, two of whom are now senior engineers elsewhere."
+      ]
+    }
+  ],
+  "education": [
+    {
+      "qualification": "MEng, Computer Science",
+      "institution": "University of Bristol",
+      "period": "2011 - 2015"
+    },
+    {
+      "qualification": "Postgraduate certificate, Distributed Systems",
+      "institution": "Open University",
+      "period": "2018"
+    }
+  ],
+  "skills": [
+    "Rust",
+    "Go",
+    "TypeScript",
+    "PostgreSQL",
+    "Linux",
+    "OCI containers",
+    "Reproducible builds",
+    "Incident response"
+  ],
+  "meta": {
+    "fixture": "a-valid-resume",
+    "dataDigest": "sha256:00000000000000000000000000000000000000000000000000000000000000a1",
+    "note": "V24 canary lives in summary/experience as a plain string. It must appear in this file and in NO argv and NO environment value.",
+    "canary": "CLEARANCE_CANARY_V24_9c1d7b3e5a"
+  }
+}

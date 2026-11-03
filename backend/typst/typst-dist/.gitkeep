@@ -1,0 +1,14 @@
+# T1005 spike evidence - captured 2026-09-30.
+#
+# The image tag in the spike report is `clearance/typst-worker:0.15.1`. The digests
+# recorded in the report were captured for the LOCAL build of that tag, which is
+# what `docker compose build typst-worker` produces on this host. A rebuild on another
+# host produces a different IMAGE digest (the base image is pinned by digest, so the
+# typst BINARY digest is stable, but the image manifest digest depends on build
+# provenance and layer metadata). So:
+#
+#   - `typst.binary.sha256` is REPRODUCIBLE. It is the digest of the pinned upstream
+#     asset's extracted binary, and it is what makes a render reproducible.
+#   - the image digest is ENVIRONMENT-SPECIFIC. It identifies this build, not the pin.
+#
+# Both are recorded in the report; only the first is a correctness property.

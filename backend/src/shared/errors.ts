@@ -55,6 +55,15 @@ export class ConflictError extends HttpError {
   }
 }
 
+// T1030 added a `UnprocessableEntityError` (422) here, on the reasoning that the gate
+// needed 409 ("confirm this claim and retry") to stay distinct from 422 ("the request
+// itself cannot be acted on"). Nothing ever threw it: a schema failure is a 400 from
+// `ResumeJsonValidationError`, and every gate refusal is a 409. A status code with no
+// producer is a number someone will eventually rely on, so it is gone rather than left
+// mapped in a branch nothing reaches. The distinction it was added for is real and is
+// carried instead by `code` + `reason` on the 409 body (see `RevisionAuditError` and
+// `PreRenderGateError` in backend/src/), which a client can branch on precisely.
+
 export class RateLimitError extends HttpError {
   constructor(message: string = 'Too many requests. Please try again later.') {
     super(429, message);

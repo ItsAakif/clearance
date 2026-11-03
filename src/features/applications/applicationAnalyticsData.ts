@@ -1,3 +1,13 @@
+// T1101: `averageMatchScore` is GONE.
+//
+// It was the mean of `JobEvaluation.overallScore` across the pipeline - an average of a derived
+// verdict, which is worse than one verdict: averaging a number the reader cannot audit hides the
+// individual rows behind it. 06 sec. E.6 forbids the single number, and its arithmetic is exactly
+// the "no client-side arithmetic over the counts" rule applied to a score instead of counts.
+// The evaluation it averaged is still computed, still stored and still filters/sorts the job list.
+//
+// The four members that remain are all COUNTS of things that happened, or a rate over a
+// denominator the reader can see, and none of them is derived from a quality score.
 import type { Application } from '@/services/api';
 
 export interface ApplicationAnalytics {
@@ -5,7 +15,6 @@ export interface ApplicationAnalytics {
   interviews: number;
   offers: number;
   responseRate: number | null;
-  averageMatchScore: number | null;
 }
 
 export function computeApplicationAnalytics(apps: Application[]): ApplicationAnalytics {
@@ -18,10 +27,5 @@ export function computeApplicationAnalytics(apps: Application[]): ApplicationAna
   const responded = apps.filter((a) => ['interview', 'offer', 'rejected'].includes(a.status)).length;
   const responseRate = denominator === 0 ? null : Math.round((responded / denominator) * 1000) / 10;
 
-  const scores = apps
-    .map((a) => a.jobListing?.match?.overallScore)
-    .filter((s): s is number => typeof s === 'number' && !Number.isNaN(s));
-  const averageMatchScore = scores.length === 0 ? null : Math.round((scores.reduce((sum, s) => sum + s, 0) / scores.length) * 10) / 10;
-
-  return { applications, interviews, offers, responseRate, averageMatchScore };
+  return { applications, interviews, offers, responseRate };
 }

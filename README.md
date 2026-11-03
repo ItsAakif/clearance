@@ -1,104 +1,216 @@
+<div align="center">
+
 # Clearance
 
-AI-powered resume builder with ATS optimization, job matching, and smart tailoring.
+**A self-hosted job search and resume workspace: a 350k-posting catalogue, evidence-backed resumes, and applications in one place.**
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org)
+[![React](https://img.shields.io/badge/React-18-61dafb)](https://react.dev)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791)](https://www.postgresql.org)
+[![Docker](https://img.shields.io/badge/Docker-compose-2496ed)](https://docs.docker.com/compose/)
+[![Self-hosted](https://img.shields.io/badge/hosting-self--hosted-success)](#self-hosting)
+
+[Features](#features) - [How it works](#how-it-works) - [Quick start](#quick-start) - [Self-hosting](#self-hosting) - [Screenshots](#screenshots) - [License](#license)
+
+</div>
+
+![Clearance Jobs screen](docs/screens/01-jobs.png)
+
+> Screenshot note: the images in `docs/screens/` were captured from a fictional demo profile, not from the owner's data.
+
+---
+
+## What this is
+
+Clearance is a local-first workspace for one person's job search. It runs on your machine (or your own
+server), signs you in with a single application password, and stores everything in **your own Postgres**.
+There is no vendor account and no hosted backend: the catalogue, your profile, your resumes and your
+applications live in a database you control.
+
+AI is purely bring-your-own-key. You add a provider key in Settings when you want model assistance, and it
+is encrypted at rest in your database. Every feature that does not need a model works without one.
+
+It is built for one person managing their own search. It is not a multi-tenant SaaS.
 
 ## Features
 
-- **Resume Builder** — Build resumes from scratch or upload existing PDF/DOCX for parsing
-- **ATS Scanning** — Deterministic rule-based scoring (formatting, structure, content, keywords, completeness) + optional LLM evaluation
-- **Job Matching** — Keyword matching with role-specific banks, tailoring suggestions
-- **Job Discovery** — Multi-source search (Greenhouse, Ashby, Lever, Workday, RSS, scrapers, aggregators)
-- **Smart Tailoring** — Multi-pass AI pipeline (improver → refiner → 3-factor score)
-- **AI-Assisted Build** — Paste a job description to auto-generate resume sections
-- **Application Tracking** — Pipeline management (saved → tailored → applied → interview → offer)
-- **PDF/DOCX Export** — Client-side PDF via @react-pdf/renderer + server-side Playwright HTML-to-PDF
-- **Google OAuth** — Sign in with Google
-- **BYOK AI Keys** — Bring your own API keys for OpenAI, Groq, OpenRouter, Gemini, Tavily, Exa
+- **Faceted catalogue search** over the swept ATS catalogue: full-text query plus facets for location, work
+  mode, seniority, salary, company and source, with stable paging over a `searchDocument` built per posting.
+- **Deep search with the ATS board sweep**: resolve company names to their ATS boards and sweep those
+  boards directly, rather than only querying the catalogue.
+- **Resume studio** with Typst and LaTeX template families, live preview, and server-rendered PDFs from the
+  same document.
+- **Evidence and claims layer**: a claim is a statement you have confirmed. Nothing unconfirmed enters a
+  resume, and the studio shows you what is still unsupported.
+- **Job match with named gaps**: match your profile to a posting and get the requirements it does not
+  cover, by name, instead of a score.
+- **Two-day project suggestions**: gaps become project proposals with a stack, references and a plan that
+  fits a 16-hour budget.
+- **Applications board and workspace**: stages, events, notes and the resume version you sent, per
+  application.
+- **Catalogue insights**: measured rollups over the catalogue (open roles, postings in the last 30 days,
+  top skills, work mode, seniority, salary bands by region) with no model and no estimates.
+- **Daily catalogue snapshots**: a GitHub Actions workflow sweeps one shard per ATS provider and
+  publishes an excerpt-only snapshot as a GitHub Release; the app syncs it with one click from Settings
+  or imports a downloaded snapshot locally.
 
-## Tech Stack
+## How it works
 
-- **Frontend**: React 18, Vite, TypeScript, Tailwind CSS, shadcn-ui, React Query
-- **Backend**: Express.js, TypeScript, Prisma ORM (PostgreSQL)
-- **Auth**: JWT in httpOnly cookies, bcrypt, Google OAuth2
-- **AI**: Multi-provider support (OpenAI, Groq, OpenRouter, Gemini) with key rotation
-- **Export**: @react-pdf/renderer, Playwright, docxtemplater
+**Catalogue pipeline.** A company registry maps employers to ATS providers. A per-provider sweep walks
+each provider's boards, normalises postings, dedupes them by `(source, externalId)` and `canonicalKey`,
+and writes a derived `searchDocument` that search and facets read. The daily workflow (03:00 UTC) runs
+the same sweep in shards, merges them, and publishes one snapshot per day.
 
-## Getting Started
+**Render path.** A resume is a document, not a template string. The backend validates the document,
+selects a Typst or LaTeX template, and asks a sandboxed render broker for a PDF. The broker compiles in a
+separate container with no network, pinned toolchains and hard limits on time, memory and output size; the
+backend never executes user content itself.
 
-### Prerequisites
-- Node.js 18+
-- PostgreSQL 14+ (or Neon/Supabase)
+**Evidence gate.** Parsed statements become unconfirmed claims. Only confirmed claims are available to the
+tailoring step, and the studio reports the requirements that remain unsupported, so a resume cannot
+silently claim something you have not verified.
 
-### Setup
+## Quick start
 
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   npm install
-   cd backend && npm install && cd ..
-   ```
-3. Copy and configure environment variables:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your values
-   ```
-4. Set up the database:
-   ```bash
-   cd backend
-   npx prisma generate
-   npx prisma migrate dev
-   cd ..
-   ```
-5. Start development:
-   ```bash
-   # Backend (port 3001)
-   cd backend && npm run dev
-
-   # Frontend (port 8080)
-   npm run dev
-   ```
-
-### Docker
+Prerequisites: Docker with Compose v2, and about 2 GB of free disk for the images.
 
 ```bash
-docker compose up --build
+git clone https://github.com/ItsAakif/clearance.git
+cd clearance
+cp .env.example .env
 ```
 
-## Project Structure
+Set these in `.env` before the first start:
 
-```
-├── src/                    # Frontend React app
-│   ├── pages/              # Route pages (22 pages)
-│   ├── features/           # Feature modules (resume-builder, ats-report, job-match, jobs, template-selector)
-│   ├── components/         # Shared UI components
-│   ├── hooks/              # React Query hooks
-│   ├── services/api/       # API client layer
-│   └── types/              # TypeScript type definitions
-├── backend/                # Express API server
-│   ├── src/
-│   │   ├── routes/         # API route handlers (16 route files)
-│   │   ├── ai/             # AI services (key rotation, evaluation, resume generation)
-│   │   ├── ats/            # ATS scanning engine
-│   │   ├── jobSources/     # Job discovery (scrapers, aggregators, search)
-│   │   ├── resume/         # Resume parsing and export
-│   │   ├── middleware/      # Auth, admin middleware
-│   │   └── shared/         # Validation, errors, auth helpers
-│   └── prisma/             # Database schema
-└── .planning/              # Project planning docs
+```env
+POSTGRES_PASSWORD=<a strong database password>
+CLEARANCE_ACCESS_PASSWORD=<your app password>
+RENDER_BROKER_TOKEN=<a random shared secret for the render broker>
 ```
 
-## Environment Variables
+Then:
 
-See `.env.example` for all required and optional variables. Key variables:
+```bash
+docker compose up -d --build
+```
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `JWT_SECRET` | Yes | Secret for JWT signing (min 16 chars) |
-| `CLIENT_URL` | Yes | Frontend URL for CORS |
-| `GOOGLE_CLIENT_ID` | No | Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | No | Google OAuth client secret |
+Open <http://localhost:8080> and sign in with the password you set.
+
+Default password note: `CLEARANCE_ACCESS_PASSWORD` defaults to `CHANGEME` in `.env.example` and in the
+Compose file. The app warns (and in production refuses to boot) while it is still the default, so set it
+before the first start.
+
+Checks: `curl http://localhost:3001/health` returns HTTP 200, and `curl http://localhost:8080` returns the
+app shell. `VITE_*` values are baked at build time, so change them and rebuild.
+
+## Configuration
+
+Configuration is read from the repository-root `.env` (Compose passes it through). `backend/.env` is not
+used.
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `POSTGRES_USER` | no | Database user for the Compose `db` service. Defaults to `postgres`. Must match `DATABASE_URL`. |
+| `POSTGRES_PASSWORD` | yes | Database password for the Compose `db` service. Defaults to `postgres`; change it. |
+| `POSTGRES_DB` | no | Database name for the Compose `db` service. Defaults to `clearance`. |
+| `DATABASE_URL` | yes | Postgres connection string used by Prisma. Defaults to the Compose `db` service. |
+| `CLEARANCE_ACCESS_PASSWORD` | yes | The single application password. Defaults to `CHANGEME`. |
+| `PORT` | no | API port. Defaults to `3001`. |
+| `CLIENT_URL` | no | App origin used for CORS and links. Defaults to `http://localhost:8080`. |
+| `API_URL` | no | Public API origin when it differs from the request host. |
+| `RENDER_BROKER_TOKEN` | yes with the render tier | Shared secret between the API and the render broker. |
+| `RENDER_BROKER_URL` / `RENDER_BROKER_SOCKET` | no | Broker transport. Compose uses a Unix socket; leave empty for the default. |
+| `RENDER_STORAGE_KIND` | no | `fs` (implemented) or `s3` (fail-closed seam). Defaults to `fs`. |
+| `RENDER_STORAGE_ROOT` | no | Where rendered artifacts are stored. Defaults to `backend/.artifacts`. |
+| `RENDER_PER_USER_PER_MINUTE` | no | HTTP render budget per user. Defaults to `60`; can be lowered, not raised. |
+| `RENDER_MAX_CONCURRENCY`, `RENDER_QUEUE_DEPTH`, `RENDER_TIMEOUT_MS` | no | Broker containment knobs. Defaults come from the policy module and cannot be raised. |
+| `V2_TYPST_RENDER` | no | Enables the Typst/LaTeX render tier. Defaults to `false`. |
+| `SWEEP_INTERVAL_HOURS` | no | In-process registry sweep interval. Defaults to `0` (disabled). |
+| `CATALOGUE_FEED_URL` | no | Daily snapshot feed for the Settings sync button. Defaults to the latest GitHub release asset; loopback `http://` is accepted outside production. |
+| `*_API_KEY` | no | Optional env fallback for AI and search providers. The normal path is BYOK in Settings, where keys are encrypted at rest. |
+| `VITE_API_URL` / `VITE_APP_URL` | no | Frontend build values: API base URL, and the app origin for a separately hosted landing page. |
+
+## Scripts
+
+From the repository root:
+
+| Script | Purpose |
+| --- | --- |
+| `npm run dev` | Vite dev server for the app. |
+| `npm run build` | Production build of the app. |
+| `npm run test` | Vitest suite for the frontend. |
+| `npm run lint` | ESLint. |
+| `npm run preview` | Serve the production build locally. |
+
+From `backend/`:
+
+| Script | Purpose |
+| --- | --- |
+| `npm run dev` | API with reload (tsx watch). |
+| `npm run build` | Compile TypeScript and copy assets. |
+| `npm run start` | Run the compiled API. |
+| `npm run test` | Vitest suite for the backend. |
+| `npm run db:generate` | Generate the Prisma client. |
+| `npm run db:migrate` | Apply migrations in development. |
+| `npm run db:push` | Push the schema without a migration. |
+| `npm run db:studio` | Open Prisma Studio. |
+| `npm run db:local` | Start the embedded local Postgres. |
+
+Catalogue tooling (run with `npx tsx` from `backend/`):
+
+| Script | Purpose |
+| --- | --- |
+| `scripts/sweep-all.ts` | Sweep the registry. Flags: `--batches`, `--boards`, `--max-rows`, `--minutes`, `--providers`, `--close`. |
+| `scripts/export-catalogue.ts` | Export the catalogue as an excerpt-only snapshot. |
+| `scripts/merge-catalogue.ts` | Merge per-provider shards into one snapshot and manifest. |
+| `scripts/import-catalogue.ts` | Import a snapshot into a local database. |
+| `scripts/import-company-registry.ts` | Load the company-to-ATS registry. |
+| `scripts/probe-boards.ts` | Probe boards and report which providers answer. |
+
+## Screenshots
+
+| | |
+| --- | --- |
+| **Jobs** - faceted catalogue search | **Resume studio** - document outline, live A4 preview and template choice |
+| ![Jobs](docs/screens/01-jobs.png) | ![Resume studio](docs/screens/02-studio.png) |
+| **Profile** - the evidence-backed career record | **Job match** - requirements met and named gaps |
+| ![Profile](docs/screens/03-profile.png) | ![Job match](docs/screens/04-match.png) |
+| **Projects** - two-day project suggestions for the gaps | **Applications** - the board by stage |
+| ![Projects](docs/screens/05-projects.png) | ![Applications](docs/screens/06-applications.png) |
+| **Application workspace** - events, notes and the resume version sent | **Insights** - measured catalogue rollups |
+| ![Application workspace](docs/screens/07-application.png) | ![Insights](docs/screens/08-insights.png) |
+| **Interview prep** - derived risks with their rows | **Settings** - access password, AI provider keys and catalogue sync |
+| ![Interview prep](docs/screens/09-interview-prep.png) | ![Settings](docs/screens/10-settings.png) |
+| **Job preferences** - target roles, seniority and salary | **Question bank** - hand-written interview answers |
+| ![Job preferences](docs/screens/11-preferences.png) | ![Question bank](docs/screens/12-qa.png) |
+
+## Self-hosting
+
+Compose runs four services: `db` (Postgres 16), `backend` (API; applies migrations before serving),
+`frontend` (the built bundle behind nginx with SPA fallback) and the render broker with its worker images.
+Only the frontend port is published by default.
+
+- Keep the Postgres volume. It holds everything; a lost volume is a lost workspace.
+- Set `DATABASE_URL` and `POSTGRES_*` to the same credentials. If you point `DATABASE_URL` at a hosted
+  Postgres (Neon, Supabase), keep the pool small; the app appends conservative pool parameters when they
+  are missing.
+- Set `RENDER_BROKER_TOKEN` to a random value. The broker refuses to start without it.
+- Put TLS in front of the app if it is reachable from outside your machine, and treat the access password
+  as the only gate.
+- Back up by dumping the database; rendered artifacts are reproducible from documents.
+
+## Known limitations
+
+- **Single user.** One application password, one profile. There are no accounts, roles or sharing.
+- **AI features need a provider key.** Matching, tailoring and project suggestions degrade to their
+  deterministic paths without one, and model-backed features stay off until you add a key.
+- **Catalogue freshness depends on the workflow.** The snapshot is published daily by GitHub Actions; if
+  the workflow is disabled or a provider changes its API, the catalogue is as fresh as the last run.
+- **Desktop-first.** The interface targets a desktop browser; narrow windows work but are not the design
+  target.
+- **Render tier is opt-in.** With `V2_TYPST_RENDER=false`, PDF rendering through Typst/LaTeX is disabled.
 
 ## License
 
-MIT
+[MIT](./LICENSE). Use it, fork it, self-host it.

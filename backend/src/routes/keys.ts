@@ -54,6 +54,22 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       );
     }
 
+    // D8: Adzuna needs "appId:appKey" (split on the FIRST colon at fetch
+    // time). A colon-less paste used to pass creation as "validated" and
+    // only fail later via source health. Fail fast here with guidance - the
+    // message carries no key material. This check MUST stay outside the probe
+    // try/catch below, which converts any error into validated=false.
+    if (provider === 'adzuna') {
+      const sep = apiKey.indexOf(':');
+      const idPart = sep >= 0 ? apiKey.slice(0, sep).trim() : '';
+      const keyPart = sep >= 0 ? apiKey.slice(sep + 1).trim() : '';
+      if (!idPart || !keyPart) {
+        throw new BadRequestError(
+          'Adzuna keys must be stored as "appId:appKey" (app ID, a colon, then the app key from your Adzuna developer dashboard).'
+        );
+      }
+    }
+
     // Validate the key with a lightweight provider ping
     const probe = await leaseNextKey(provider, req.user!.id).catch(() => null);
     let validated = false;
@@ -71,6 +87,25 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
           body: JSON.stringify({ query: 'test', numResults: 1 }),
         });
         validated = resp.ok;
+      } else if (provider === 'adzuna') {
+        // Format already enforced above (fail-fast); a well-formed value is
+        // stored as validated - live credential errors surface via source health.
+        validated = true;
+      } else if (provider === 'rapidapi') {
+        // D8: probe JSearch (the primary RapidAPI upstream) so a key that is
+        // valid on RapidAPI but not subscribed to JSearch is stored WITHOUT
+        // the validated stamp instead of looking "validated" in Settings.
+        // Creation still succeeds; health/probes surface the subscription gap.
+        // No key material is logged - only the boolean outcome is stored.
+        try {
+          const resp = await fetch('https://jsearch.p.rapidapi.com/search-v2?query=test&num_pages=1', {
+            method: 'GET',
+            headers: { 'x-rapidapi-key': apiKey, 'x-rapidapi-host': 'jsearch.p.rapidapi.com' },
+          });
+          validated = resp.ok;
+        } catch {
+          validated = false;
+        }
       } else {
         // LLM providers: just ensure non-empty; full validation happens at use time
         validated = apiKey.trim().length >= 8;

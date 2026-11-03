@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { AppLayout } from "@/components/layout";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,11 +13,12 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
-import { Loader2, Plus, Search, MessageSquare, Edit, Trash2, RefreshCw } from "lucide-react";
-import { useQuestionAnswers, useCreateQuestionAnswer, useUpdateQuestionAnswer, useDeleteQuestionAnswer, questionAnswersQueryKey } from "@/hooks/useJobs";
+import { Loader2, Plus, Search, Edit, Trash2, Sparkles } from "lucide-react";
+import { useQuestionAnswers, useCreateQuestionAnswer, useUpdateQuestionAnswer, useDeleteQuestionAnswer, questionAnswersQueryKey, useApplications } from "@/hooks/useJobs";
 import { useQueryClient } from "@tanstack/react-query";
+import { PageShell } from "@/components/layout/PageShell";
+import { SectionView } from "@/components/layout/SectionView";
+import { InterviewSectionTabs } from "@/components/layout/SectionTabs";
 import type { QuestionAnswer } from "@/services/api";
 
 const CATEGORIES = ["behavioral", "technical", "situational", "general"] as const;
@@ -48,6 +49,7 @@ export default function QABankPage() {
   }), [searchQuery, categoryFilter]);
 
   const { data: items = [], isLoading, error, refetch } = useQuestionAnswers(filters);
+  const { data: apps = [] } = useApplications();
   const createMutation = useCreateQuestionAnswer();
   const updateMutation = useUpdateQuestionAnswer();
   const deleteMutation = useDeleteQuestionAnswer();
@@ -124,33 +126,34 @@ export default function QABankPage() {
     }
   };
 
-  const getCategoryBadgeVariant = (cat?: string | null) => {
-    switch (cat) {
-      case "behavioral": return "secondary";
-      case "technical": return "outline";
-      case "situational": return "outline";
-      case "general": return "secondary";
-      default: return "outline";
-    }
-  };
-
   return (
-    <AppLayout>
-      <div className="flex h-full flex-col">
-        <header className="flex flex-col gap-3 border-b border-border bg-card px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div>
-            <h1 className="text-lg font-semibold text-foreground">Q&A Bank</h1>
-            <p className="text-sm text-muted-foreground">Prepare answers for common interview questions</p>
-          </div>
+    <PageShell
+      title="Interview"
+      width="data"
+      actions={
+        <>
+          {/* T1110: the "Generate with AI" button and its dialog are GONE.
+              `POST /ai/generate-interview-answer` answered a question from free-form text with
+              nothing anchoring it to anything the candidate had actually done, and it is now a
+              410 (FREEZE A-38). The successor is `/app/interview/prep`, where the questions are
+              derived from the risks and gaps in the user's own confirmed evidence - so the button
+              points there instead of pretending to write the answer for them. */}
+          <Button variant="outline" asChild>
+            <Link to="/app/interview/prep">
+              <Sparkles className="mr-2 h-4 w-4" />
+              Prep from my evidence
+            </Link>
+          </Button>
           <Button onClick={openCreate} className="shrink-0">
             <Plus className="mr-2 h-4 w-4" />
             Add question
           </Button>
-        </header>
-
-        <div className="flex flex-wrap items-center gap-3 border-b border-border bg-background px-4 py-3 sm:px-6">
+        </>
+      }
+      toolbar={
+        <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
             <Input
               placeholder="Search questions..."
               value={searchQuery}
@@ -171,72 +174,91 @@ export default function QABankPage() {
             </SelectContent>
           </Select>
         </div>
-
-        <div className="flex-1 overflow-auto p-4 sm:p-6">
+      }
+    >
+      <InterviewSectionTabs />
+      <SectionView
+        title="Q&A Bank"
+        description="Prepare answers for common interview questions"
+      />
           {isLoading ? (
-            <div className="flex h-full items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div className="flex h-full items-center justify-center py-16">
+              <Loader2 className="h-5 w-5 animate-spin text-ink-3" />
             </div>
           ) : error ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <MessageSquare className="h-12 w-12 text-muted-foreground/50 mb-4" />
-              <h3 className="font-medium text-foreground mb-1">Failed to load Q&A entries</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                {error instanceof Error ? error.message : "An error occurred"}
+            <div className="max-w-md">
+              <p className="text-xs2 text-ink-3">
+                Could not load Q&amp;A entries. {error instanceof Error ? error.message : "An error occurred"}
               </p>
-              <Button variant="outline" onClick={() => refetch()}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Retry
-              </Button>
+              <button
+                type="button"
+                onClick={() => refetch()}
+                className="mt-2 text-xs2 text-ink-2 underline underline-offset-4 hover:text-ink"
+              >
+                Try again
+              </button>
             </div>
           ) : items.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <MessageSquare className="h-12 w-12 text-muted-foreground/50 mb-4" />
-              <h3 className="font-medium text-foreground mb-1">No Q&A entries yet</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                {searchQuery || categoryFilter ? "Try adjusting your filters" : "Add your first interview Q&A to get started"}
+            <div className="max-w-md">
+              <p className="text-xs2 text-ink-3">
+                {searchQuery || categoryFilter
+                  ? "No answer matches that search."
+                  : "No Q&A entries yet. Add the first answer you want to rehearse."}
               </p>
               {!searchQuery && !categoryFilter && (
-                <Button onClick={openCreate}>
-                  <Plus className="mr-2 h-4 w-4" />
+                <button
+                  type="button"
+                  onClick={openCreate}
+                  className="mt-2 text-xs2 text-ink-2 underline underline-offset-4 hover:text-ink"
+                >
                   Add question
-                </Button>
+                </button>
               )}
             </div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="max-w-3xl space-y-3">
+              <div className="flex items-baseline justify-between gap-4">
+                <h2 className="section-title">Answers</h2>
+                <span className="num text-xs2 text-ink-3">{items.length} entries</span>
+              </div>
               {items.map((item) => (
-                <Card key={item.id} className="flex flex-col p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-medium text-foreground leading-snug">{item.question}</h3>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(item)} aria-label={`Edit: ${item.question}`}>
+                <article key={item.id} className="surface-card p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <h3 className="text-base font-medium leading-snug text-ink">{item.question}</h3>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        className="text-ink-3 hover:text-ink"
+                        onClick={() => openEdit(item)}
+                        aria-label={`Edit: ${item.question}`}
+                      >
                         <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteTarget(item)} aria-label={`Delete: ${item.question}`}>
+                      </button>
+                      <button
+                        type="button"
+                        className="text-ink-3 hover:text-destructive"
+                        onClick={() => setDeleteTarget(item)}
+                        aria-label={`Delete: ${item.question}`}
+                      >
                         <Trash2 className="h-4 w-4" />
-                      </Button>
+                      </button>
                     </div>
                   </div>
-                  <p className="mt-2 text-sm text-muted-foreground whitespace-pre-wrap line-clamp-4">{item.answer}</p>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    {item.category && (
-                      <Badge variant={getCategoryBadgeVariant(item.category)} className="capitalize">{item.category}</Badge>
-                    )}
-                    {item.tags?.map((tag) => (
-                      <Badge key={tag} variant="secondary">{tag}</Badge>
-                    ))}
-                  </div>
-                  {item.notes && (
-                    <p className="mt-2 text-xs text-muted-foreground italic line-clamp-2">{item.notes}</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-ink-3 line-clamp-3">{item.answer}</p>
+                  {(item.category || item.tags?.length || item.notes) && (
+                    <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs2 text-ink-3">
+                      {item.category && <span className="capitalize">{item.category}</span>}
+                      {item.tags?.map((tag) => (
+                        <span key={tag} className="before:mr-2 before:content-['·']">{tag}</span>
+                      ))}
+                      {item.notes && <span className="italic line-clamp-1">{item.notes}</span>}
+                    </p>
                   )}
-                </Card>
+                </article>
               ))}
             </div>
           )}
-        </div>
-
-        {/* Add / Edit dialog */}
+          {/* Add / Edit dialog */}
         <Dialog open={dialogOpen} onOpenChange={(open) => open ? null : handleCloseDialog()}>
           <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
             <DialogHeader>
@@ -282,7 +304,7 @@ export default function QABankPage() {
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="qa-tags">Tags <span className="text-xs text-muted-foreground">(comma-separated)</span></Label>
+                  <Label htmlFor="qa-tags">Tags <span className="text-xs2 text-ink-3">(comma-separated)</span></Label>
                   <Input
                     id="qa-tags"
                     value={form.tags}
@@ -293,7 +315,7 @@ export default function QABankPage() {
                 </div>
               </div>
               <div>
-                <Label htmlFor="qa-notes">Notes <span className="text-xs text-muted-foreground">(optional)</span></Label>
+                <Label htmlFor="qa-notes">Notes <span className="text-xs2 text-ink-3">(optional)</span></Label>
                 <Textarea
                   id="qa-notes"
                   value={form.notes}
@@ -334,7 +356,7 @@ export default function QABankPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </div>
-    </AppLayout>
+
+        </PageShell>
   );
 }

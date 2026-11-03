@@ -1,0 +1,12 @@
+# Manifest for the first-party spike probe package.
+# `compiler` is omitted deliberately: it adds no constraint and would become a second
+# pin to keep in step with the engine pin.
+[package]
+name = "spike-probe"
+version = "1.0.0"
+entrypoint = "lib.typ"
+authors = ["Clearance T1005"]
+license = "Apache-2.0"
+description = "T1005 assertion-V12 probe. Not a template dependency."
+categories = ["utility"]
+keywords = ["spike", "probe"]

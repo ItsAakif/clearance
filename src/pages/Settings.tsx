@@ -5,17 +5,15 @@ import {
   LogOut,
   Loader2,
   AlertCircle,
-  KeyRound,
   Trash2,
   CheckCircle2,
-  BookOpen,
   Plus,
-  Pencil,
-  Cpu,
+  MoreHorizontal,
+  Upload,
+  RefreshCw,
 } from "lucide-react";
-import { AppLayout } from "@/components/layout";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { PageBody } from "@/components/layout";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -37,17 +35,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { useDeleteAccount, useLogout } from "@/hooks/useAuth";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useLogout } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useApiKeys, useCreateApiKey, useDeleteApiKey } from "@/hooks/useJobs";
 import type { ApiKey } from "@/services/api";
@@ -58,6 +51,9 @@ import {
   useSetProviderModel,
   useUpdateModelSettings,
   mergePresetAndFetched,
+  useCatalogueStatus,
+  useImportCatalogueSnapshot,
+  useSyncCatalogue,
 } from "@/hooks/useSettings";
 import type { ProviderPreset } from "@/services/api";
 
@@ -96,7 +92,7 @@ const SETUP_PROVIDERS: SetupProvider[] = [
     name: "Adzuna (Job Aggregator)",
     tier: "Recommended",
     category: "Job Boards",
-    unlocks: "Global aggregated listings (LinkedIn/Indeed/ATS). Official API, 2,500 req/mo free.",
+    unlocks: "Global aggregated listings (LinkedIn/Indeed/ATS) - one of four aggregators. Official API, 2,500 req/mo free.",
     cost: "Free tier: 2,500 req/mo (250/day). No card.",
     keyFormat: "Needs APP_ID + APP_KEY. Store as 'appId:appKey' in one key, or set ADZUNA_APP_ID / ADZUNA_APP_KEY env.",
     steps: [
@@ -109,35 +105,50 @@ const SETUP_PROVIDERS: SetupProvider[] = [
     linkLabel: "developer.adzuna.com",
   },
   {
-    name: "Jooble (Job Aggregator)",
-    tier: "Optional",
+    name: "USAJobs (Job Aggregator)",
+    tier: "Recommended",
     category: "Job Boards",
-    unlocks: "Global job listings via partner API. Good geographic coverage.",
-    cost: "Free API key via partner portal.",
-    keyFormat: "Paste the single Jooble API key.",
+    unlocks: "US federal openings (thousands of current announcements).",
+    cost: "Fully free. No paid tier, no card.",
+    keyFormat: "Needs your email + an API key. Store as 'email:apiKey' in one key, or set USAJOBS_EMAIL / USAJOBS_API_KEY env.",
     steps: [
-      "Request a free key at jooble.org/api/ (enter email, get key by email).",
-      "Copy the API key.",
-      "Settings → API Keys → Add Key → Jooble → paste it.",
+      "Request a free API key at developer.usajobs.gov/apirequest/ (email form).",
+      "Copy the key from the email.",
+      "Settings → API Keys → Add Key → USAJobs → paste 'your@email:yourKey'.",
+      "The email is sent as the required User-Agent header, so it must be the address you registered with.",
     ],
-    link: "https://jooble.org/api/",
-    linkLabel: "jooble.org/api",
+    link: "https://developer.usajobs.gov/apirequest/",
+    linkLabel: "developer.usajobs.gov",
   },
   {
-    name: "Careerjet (Job Aggregator)",
+    name: "Reed (Job Aggregator)",
     tier: "Optional",
     category: "Job Boards",
-    unlocks: "90+ country job search. Free affiliate API (requires an attribution link on results).",
-    cost: "Free basic affiliate ID.",
-    keyFormat: "Paste your Careerjet affiliate ID.",
+    unlocks: "100,000+ UK vacancies.",
+    cost: "Free API key. No card.",
+    keyFormat: "Paste the single Reed API key (used as the Basic-auth username).",
     steps: [
-      "Join the free partner program at careerjet.com/partners/.",
-      "Copy your affiliate ID.",
-      "Settings → API Keys → Add Key → Careerjet → paste the ID.",
-      "Note: free tier requires showing a Careerjet attribution link.",
+      "Register at reed.co.uk/developers/jobseeker.",
+      "Copy the API key (also shown as your API key on the Reed developer page).",
+      "Settings → API Keys → Add Key → Reed → paste it.",
     ],
-    link: "https://www.careerjet.com/partners/",
-    linkLabel: "careerjet.com/partners",
+    link: "https://www.reed.co.uk/developers/jobseeker",
+    linkLabel: "reed.co.uk/developers",
+  },
+  {
+    name: "Findwork (Job Aggregator)",
+    tier: "Optional",
+    category: "Job Boards",
+    unlocks: "Developer and design roles aggregated from HN, RemoteOK, We Work Remotely and Dribbble. Small but high-signal for engineering.",
+    cost: "Free tier.",
+    keyFormat: "Paste the single Findwork API token.",
+    steps: [
+      "Sign up at findwork.dev/developers/.",
+      "Copy your API token from the developer page.",
+      "Settings → API Keys → Add Key → Findwork → paste it.",
+    ],
+    link: "https://findwork.dev/developers/",
+    linkLabel: "findwork.dev/developers",
   },
   {
     name: "Exa / Tavily (Search)",
@@ -163,8 +174,10 @@ const SETUP_PROVIDERS: SetupProvider[] = [
     keyFormat: "Paste your RapidAPI app key (X-RapidAPI-Key).",
     steps: [
       "Create a free RapidAPI account (no card).",
-      "Subscribe to JSearch BASIC ($0): rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch.",
-      "Optional: also subscribe to linkedin-scraper-api6 and indeed-scraper-api2 (BASIC $0).",
+      "Subscribe to JSearch BASIC ($0): https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch.",
+      "Optional: also subscribe (BASIC $0) to https://rapidapi.com/pullapi-pullapi-default/api/linkedin-scraper-api6 and https://rapidapi.com/pullapi-pullapi-default/api/indeed-scraper-api2.",
+      "In each listing's Code Snippet, check that X-RapidAPI-Host matches the listing you subscribed to (jsearch.p.rapidapi.com for canonical JSearch). If it shows a different jsearch host (e.g. jsearch-mega or a third-party fork), use that host's own endpoints instead.",
+      "Clearance calls JSearch at GET /search-v2 (the current version's path).",
       "Copy your RapidAPI key from My Apps.",
       "Settings → API Keys → Add Key → RapidAPI → paste it.",
     ],
@@ -197,12 +210,26 @@ const PROVIDER_SETUP_LINK: Record<string, string> = {
   tavily: "https://tavily.com",
   exa: "https://exa.ai/dashboard/api-keys",
   adzuna: "https://developer.adzuna.com/",
-  jooble: "https://jooble.org/api/",
-  careerjet: "https://www.careerjet.com/partners/",
+  usajobs: "https://developer.usajobs.gov/apirequest/",
+  reed: "https://www.reed.co.uk/developers/jobseeker",
+  findwork: "https://findwork.dev/developers/",
   firecrawl: "https://www.firecrawl.dev/app/api-keys",
   crawl4ai: "https://github.com/unclecode/crawl4ai",
   rapidapi: "https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch/pricing",
 };
+
+// Any stored key that is not an LLM provider id (13 registry ids or `custom:<slug>`) is
+// shown here regardless of whether it has a KEY_PROVIDERS row. This is what guarantees a
+// retired provider can never hide a user's key (see ADR-005).
+const LLM_KEY_PROVIDER_IDS = [ 'groq','openai','openrouter','gemini','anthropic','zai',
+  'deepseek','mistral','together','fireworks','azure-openai','ollama','lmstudio' ];
+
+function isNonLlmKeyProvider(provider: string): boolean {
+  return !provider.startsWith('custom:') && !LLM_KEY_PROVIDER_IDS.includes(provider);
+}
+function hasKeyProviderRow(provider: string): boolean {
+  return KEY_PROVIDERS.some((r) => r.provider === provider);
+}
 
 // Non-LLM key rows (search / aggregators / scrapers). LLM providers moved to
 // the unified "AI Providers" card below. `important` marks the ones most
@@ -211,8 +238,9 @@ const KEY_PROVIDERS: { provider: string; label: string; important: boolean }[] =
   { provider: "tavily", label: "Tavily (Search)", important: false },
   { provider: "exa", label: "Exa (Search)", important: false },
   { provider: "adzuna", label: "Adzuna (Job Aggregator)", important: true },
-  { provider: "jooble", label: "Jooble (Job Aggregator)", important: false },
-  { provider: "careerjet", label: "Careerjet (Job Aggregator)", important: false },
+  { provider: "usajobs", label: "USAJobs (US Federal)", important: true },
+  { provider: "reed", label: "Reed (UK)", important: false },
+  { provider: "findwork", label: "Findwork (Dev & Design)", important: false },
   { provider: "firecrawl", label: "Firecrawl (Scraping)", important: false },
   { provider: "crawl4ai", label: "Crawl4AI (Scraping)", important: false },
   { provider: "rapidapi", label: "RapidAPI (Hard Boards)", important: true },
@@ -423,25 +451,23 @@ function AiProvidersCard() {
     : "";
 
   return (
-    <Card className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Cpu className="h-5 w-5 text-muted-foreground" />
-          <h2 className="font-semibold text-foreground">AI Providers</h2>
-        </div>
+    <section className="surface-card p-5">
+      <div className="flex items-baseline justify-between gap-4">
+        <h2 className="section-title">AI providers</h2>
         <Button size="sm" onClick={() => setAddOpen(true)}>
           <Plus className="mr-1 h-4 w-4" /> Add provider
         </Button>
       </div>
+      <div className="mt-2 border-t border-rule" />
 
-      <p className="mb-4 text-sm text-muted-foreground">
+      <p className="mt-3 mb-4 text-sm text-ink-3">
         Connect an LLM provider, then pick the model it uses. Legacy{" "}
         <code>ATS_MODEL</code>, <code>RESUME_TAILOR_MODEL</code> and <code>RESUME_PARSE_MODEL</code>{" "}
         env vars are still honored when no model is set here.
       </p>
 
       {providersLoading ? (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <p className="flex items-center gap-2 text-sm text-ink-3">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading providers…
         </p>
       ) : (
@@ -451,49 +477,62 @@ function AiProvidersCard() {
             const selected = modelSettings?.models[p.id] ?? p.defaultModel ?? "";
             const isCustom = !!modelSettings?.overrides?.[p.id];
             return (
-              <div key={p.id} className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+              <div key={p.id} className="flex items-center justify-between gap-3 border-b border-rule py-2.5">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-foreground">{p.label}</span>
+                    <span className="text-sm font-medium text-ink">{p.label}</span>
                     {stored.length > 0 ? (
                       <CheckCircle2 className="h-3.5 w-3.5 text-success" />
                     ) : (
-                      <Badge variant="outline" className="text-[10px] text-muted-foreground">no key</Badge>
+                      <Badge variant="outline" className="text-xs text-ink-3">no key</Badge>
                     )}
                     {isCustom ? (
-                      <Badge variant="secondary" className="text-[10px]">Custom model</Badge>
+                      <Badge variant="secondary" className="text-xs">Custom model</Badge>
                     ) : (
-                      <Badge variant="outline" className="text-[10px] text-muted-foreground">Default model</Badge>
+                      <Badge variant="outline" className="text-xs text-ink-3">Default model</Badge>
                     )}
                   </div>
-                  <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                  <p className="mt-0.5 truncate text-xs2 text-ink-3">
                     {stored.length > 0 ? stored[0].maskedKey : "Not connected"}
                     {selected ? ` · ${selected}` : ""}
                   </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="flex shrink-0 items-center gap-2">
                   {stored.length > 0 ? (
                     <>
-                      <Button variant="ghost" size="sm" onClick={() => openKeyDialog(p.id, true)}>
-                        <Pencil className="mr-1 h-3.5 w-3.5" /> Change
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          setModelTarget({ providerId: p.id, preset: p })
-                        }
+                      <button
+                        type="button"
+                        className="text-xs2 text-ink-2 underline-offset-4 hover:text-ink hover:underline"
+                        onClick={() => openKeyDialog(p.id, true)}
                       >
-                        Model
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground"
-                        onClick={() => handleRemoveProvider(p.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                        Change
+                      </button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-ink-3"
+                            aria-label={`More actions for ${p.label}`}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            className="text-xs2"
+                            onClick={() => setModelTarget({ providerId: p.id, preset: p })}
+                          >
+                            Model
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-xs2 text-destructive"
+                            onClick={() => void handleRemoveProvider(p.id)}
+                          >
+                            Remove provider
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </>
                   ) : (
                     <Button variant="outline" size="sm" onClick={() => openKeyDialog(p.id, false)}>
@@ -612,10 +651,10 @@ function AiProvidersCard() {
                       : "https://my-host:1234/v1"
                   }
                   spellCheck={false}
-                  className="font-mono text-sm"
+                  className="text-sm"
                 />
                 {keyTarget.providerId === "azure-openai" && (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs2 text-ink-3">
                     The model field takes your deployment name.
                   </p>
                 )}
@@ -670,7 +709,7 @@ function AiProvidersCard() {
             <CommandInput placeholder="Search models…" />
             <CommandList className="max-h-72">
               {modelQuery.isFetching ? (
-                <p className="flex items-center gap-2 px-4 py-6 text-sm text-muted-foreground">
+                <p className="flex items-center gap-2 px-4 py-6 text-sm text-ink-3">
                   <Loader2 className="h-4 w-4 animate-spin" /> Fetching models…
                 </p>
               ) : (
@@ -683,13 +722,13 @@ function AiProvidersCard() {
                       key={m}
                       value={m}
                       onSelect={() => handleSaveModel(m)}
-                      className="font-mono text-sm"
+                      className="text-sm"
                     >
                       {m}
                     </CommandItem>
                   ))}
                   {modelQuery.isError && mergedModels.length === 0 && (
-                    <p className="px-4 py-2 text-xs text-muted-foreground">
+                    <p className="px-4 py-2 text-xs2 text-ink-3">
                       Live fetch failed — enter the model id manually below.
                     </p>
                   )}
@@ -697,13 +736,13 @@ function AiProvidersCard() {
               )}
             </CommandList>
           </Command>
-          <div className="flex items-center gap-2 border-t border-border p-4">
+          <div className="flex items-center gap-2 border-t border-rule p-4">
             <Input
               value={manualModel}
               onChange={(e) => setManualModel(e.target.value)}
               placeholder="Or type a model id…"
               spellCheck={false}
-              className="font-mono text-sm"
+              className="text-sm"
             />
             <Button
               variant="outline"
@@ -714,7 +753,7 @@ function AiProvidersCard() {
             </Button>
           </div>
           {modelTarget && modelSettings?.overrides?.[modelTarget.providerId] && (
-            <div className="flex justify-end border-t border-border p-4 pt-3">
+            <div className="flex justify-end border-t border-rule p-4 pt-3">
               <Button
                 variant="ghost"
                 size="sm"
@@ -727,14 +766,137 @@ function AiProvidersCard() {
           )}
         </DialogContent>
       </Dialog>
-    </Card>
+    </section>
+  );
+}
+
+function CatalogueSnapshotCard() {
+  const { data: status } = useCatalogueStatus();
+  const importSnapshot = useImportCatalogueSnapshot();
+  const syncCatalogue = useSyncCatalogue();
+  const [files, setFiles] = useState<File[]>([]);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [feedUnavailable, setFeedUnavailable] = useState(false);
+
+  const handleSync = async () => {
+    setSyncResult(null);
+    setSyncError(null);
+    setFeedUnavailable(false);
+    try {
+      const data = await syncCatalogue.mutateAsync();
+      setSyncResult(`Imported ${data.imported} postings (skipped ${data.skipped})`);
+    } catch (error) {
+      const shaped = error as { statusCode?: number; message?: string };
+      if (shaped.statusCode === 502 || /not published/i.test(shaped.message ?? "")) {
+        setFeedUnavailable(true);
+      } else {
+        setSyncError(shaped.message ?? "Catalogue sync failed.");
+      }
+    }
+  };
+
+  const handleImport = async () => {
+    const snapshot = files.find((f) => f.name.endsWith(".gz"));
+    const manifest = files.find((f) => f.name.endsWith(".json"));
+    if (!snapshot || !manifest) {
+      setLocalError("Select both catalogue.jsonl.gz and manifest.json.");
+      return;
+    }
+    setLocalError(null);
+    try {
+      await importSnapshot.mutateAsync({ snapshot, manifest: await manifest.text() });
+      setFiles([]);
+    } catch {
+      // The hook owns the destructive toast.
+    }
+  };
+
+  const lastUpdated = status?.importedAt
+    ? new Date(status.importedAt).toLocaleString()
+    : "never";
+
+  return (
+    <section className="surface-card p-5">
+      <h2 className="section-title">Catalogue snapshot</h2>
+      <div className="mt-2 border-t border-rule" />
+
+      <p className="mt-3 text-sm text-ink-3">
+        The daily feed carries active listings with derived facets and a short
+        description excerpt - never full job descriptions.
+      </p>
+
+      <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-ink-3">
+        <span>
+          <span className="font-medium text-ink">{(status?.active ?? 0).toLocaleString()}</span> active listings
+        </span>
+        <span>
+          Last sync: <span className="text-ink">{lastUpdated}</span>
+        </span>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Button onClick={handleSync} disabled={syncCatalogue.isPending}>
+          {syncCatalogue.isPending ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Syncing…
+            </>
+          ) : (
+            <>
+              <RefreshCw className="mr-2 h-4 w-4" /> Sync catalogue
+            </>
+          )}
+        </Button>
+        {syncResult && <span className="text-sm text-ink-3">{syncResult}</span>}
+      </div>
+
+      {feedUnavailable && (
+        <p className="mt-2 text-xs2 text-ink-3">The daily snapshot is not published yet.</p>
+      )}
+      {syncError && <p className="mt-2 text-xs2 text-destructive">{syncError}</p>}
+
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Input
+          type="file"
+          multiple
+          accept=".gz,.json,application/gzip,application/json"
+          className="text-sm sm:max-w-sm"
+          onChange={(e) => {
+            setFiles(Array.from(e.target.files ?? []));
+            setLocalError(null);
+          }}
+        />
+        <Button
+          variant="outline"
+          onClick={handleImport}
+          disabled={importSnapshot.isPending || files.length === 0}
+        >
+          {importSnapshot.isPending ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Importing…
+            </>
+          ) : (
+            <>
+              <Upload className="mr-2 h-4 w-4" /> Import snapshot
+            </>
+          )}
+        </Button>
+      </div>
+
+      {localError && <p className="mt-2 text-xs2 text-destructive">{localError}</p>}
+
+      <p className="mt-3 text-xs2 text-ink-3">
+        Select the <code>catalogue.jsonl.gz</code> and its <code>manifest.json</code>. The
+        daily feed URL is configured with <code>CATALOGUE_FEED_URL</code>.
+      </p>
+    </section>
   );
 }
 
 export default function SettingsPage() {
   const navigate = useNavigate();
   const logoutMutation = useLogout();
-  const deleteAccountMutation = useDeleteAccount();
   const { toast } = useToast();
 
   // BYOK (Bring Your Own Keys)
@@ -772,42 +934,32 @@ export default function SettingsPage() {
     navigate("/");
   };
 
-  const handleDeleteAccount = async () => {
-    await deleteAccountMutation.mutateAsync();
-    navigate("/");
-  };
-
   return (
-    <AppLayout>
-      <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col">
         {/* Page header */}
-        <header className="border-b border-border bg-card px-6 py-4">
-          <h1 className="text-lg font-semibold text-foreground">Settings</h1>
-          <p className="text-sm text-muted-foreground">
+        <header className="border-b border-border bg-paper px-8 py-5">
+          <h1 className="page-title text-ink">Settings</h1>
+          <p className="mt-1 text-sm text-ink-3">
             Manage your account and API keys
           </p>
         </header>
 
         {/* Content */}
         <div className="flex-1 overflow-auto">
-          <div className="mx-auto max-w-2xl space-y-6 p-6">
+          <PageBody width="prose" className="space-y-6 px-8 py-8">
             {/* API Keys (BYOK) */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.25 }}
             >
-              <Card className="p-6">
-                <div className="mb-4 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <KeyRound className="h-5 w-5 text-muted-foreground" />
-                    <h2 className="font-semibold text-foreground">API Keys (Bring Your Own)</h2>
-                  </div>
-                </div>
+              <section className="surface-card p-5">
+                <h2 className="section-title">API keys (bring your own)</h2>
+                <div className="mt-2 border-t border-rule" />
 
-                <p className="mb-4 text-sm text-muted-foreground">
+                <p className="mt-3 mb-4 text-sm text-ink-3">
                   Add the keys you need - none are required to browse the built-in job boards. Keys are
-                  encrypted and never shared. <span className="font-medium text-foreground">*</span> marks the
+                  encrypted and never shared. <span className="font-medium text-ink">*</span> marks the
                   providers most users need.
                 </p>
 
@@ -817,7 +969,7 @@ export default function SettingsPage() {
                     return (
                       <div key={row.provider} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
                         <div className="min-w-0">
-                          <label className="flex items-center gap-1 text-sm font-medium text-foreground">
+                          <label className="flex items-center gap-1 text-sm font-medium text-ink">
                             {row.label}
                             {row.important && <span className="text-primary">*</span>}
                           </label>
@@ -834,9 +986,9 @@ export default function SettingsPage() {
                           href={PROVIDER_SETUP_LINK[row.provider]}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-xs text-primary hover:underline whitespace-nowrap"
+                          className="text-xs2 text-primary hover:underline whitespace-nowrap"
                         >
-                          View Setup ↗
+                          View setup
                         </a>
                       </div>
                     );
@@ -844,8 +996,8 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="mt-5 flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground">
-                    Saved keys: {(apiKeys as ApiKey[]).filter((k) => KEY_PROVIDERS.some((r) => r.provider === k.provider)).length}
+                  <p className="text-xs2 text-ink-3">
+                    Saved keys: {(apiKeys as ApiKey[]).filter((k) => isNonLlmKeyProvider(k.provider)).length}
                   </p>
                   <Button onClick={handleSaveAllKeys} disabled={savingKeys || Object.values(keyInputs).every((v) => !v.trim())}>
                     {savingKeys ? (
@@ -858,24 +1010,34 @@ export default function SettingsPage() {
                   </Button>
                 </div>
 
-                {(apiKeys as ApiKey[]).filter((k) => KEY_PROVIDERS.some((r) => r.provider === k.provider)).length > 0 && (
-                  <div className="mt-4 border-t border-border pt-4">
-                    <p className="mb-2 text-xs font-medium text-muted-foreground">Stored keys (remove any)</p>
+                {(apiKeys as ApiKey[]).filter((k) => isNonLlmKeyProvider(k.provider)).length > 0 && (
+                  <div className="mt-4 border-t border-rule pt-4">
+                    <p className="mb-2 text-xs2 font-medium text-ink-3">Stored keys (remove any)</p>
+                    {(apiKeys as ApiKey[]).some((k) => isNonLlmKeyProvider(k.provider) && !hasKeyProviderRow(k.provider)) && (
+                      <p className="mb-2 text-xs2 text-ink-3">
+                        Keys for boards Clearance no longer uses are kept here so you can remove them. They are not sent anywhere.
+                      </p>
+                    )}
                     <div className="space-y-2">
-                      {(apiKeys as ApiKey[]).filter((k) => KEY_PROVIDERS.some((r) => r.provider === k.provider)).map((k: ApiKey) => (
-                        <div key={k.id} className="flex items-center justify-between rounded-lg border border-border p-3">
+                      {(apiKeys as ApiKey[]).filter((k) => isNonLlmKeyProvider(k.provider)).map((k: ApiKey) => (
+                        <div key={k.id} className="flex items-center justify-between gap-3 border-b border-rule py-2.5">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium capitalize text-foreground">{k.provider}</span>
+                              <span className="text-sm font-medium capitalize text-ink">{k.provider}</span>
+                              {!hasKeyProviderRow(k.provider) && (
+                                <Badge variant="outline" className="text-xs text-ink-3">
+                                  No longer used
+                                </Badge>
+                              )}
                               {k.lastValidatedAt ? (
                                 <CheckCircle2 className="h-3.5 w-3.5 text-success" />
                               ) : (
                                 <AlertCircle className="h-3.5 w-3.5 text-warning" />
                               )}
                             </div>
-                            <p className="truncate text-xs text-muted-foreground">{k.maskedKey}</p>
+                            <p className="truncate text-xs2 text-ink-3">{k.maskedKey}</p>
                           </div>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={() => deleteKey.mutate(k.id)}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-ink-3" onClick={() => deleteKey.mutate(k.id)}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
@@ -883,7 +1045,7 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 )}
-              </Card>
+              </section>
             </motion.div>
 
             {/* AI Providers (unified picker: key + model per LLM provider) */}
@@ -895,55 +1057,62 @@ export default function SettingsPage() {
               <AiProvidersCard />
             </motion.div>
 
+            {/* Catalogue snapshot (daily feed sync + import) */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.28 }}
+            >
+              <CatalogueSnapshotCard />
+            </motion.div>
+
             {/* Setup Guide (provider -> features -> cost -> link) */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.22 }}
             >
-              <Card className="p-6">
-                <div className="mb-4 flex items-center gap-2">
-                  <BookOpen className="h-5 w-5 text-muted-foreground" />
-                  <h2 className="font-semibold text-foreground">Setup Guide</h2>
-                </div>
-                <p className="mb-4 text-sm text-muted-foreground">
+              <section className="surface-card p-5">
+                <h2 className="section-title">Setup guide</h2>
+                <div className="mt-2 border-t border-rule" />
+                <p className="mt-3 mb-4 text-sm text-ink-3">
                   Clearance is self-hosted and bring-your-own-key (BYOK). Add only the providers for the
                   features you want - none are required to browse the built-in job boards. Click "Add provider"
                   in the AI Providers card above to connect an LLM.
                 </p>
                 <div className="space-y-3">
                   {SETUP_PROVIDERS.map((p) => (
-                    <div key={p.name} className="rounded-lg border border-border p-4">
+                    <div key={p.name} className="border-b border-rule py-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-medium text-foreground">{p.name}</span>
+                            <span className="text-sm font-medium text-ink">{p.name}</span>
                             <Badge
                               variant="secondary"
-                              className={p.tier === "Recommended" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}
+                              className={p.tier === "Recommended" ? "bg-primary/10 text-primary" : "bg-muted text-ink-3"}
                             >
                               {p.tier}
                             </Badge>
-                            <Badge variant="outline" className="text-[10px] text-muted-foreground">{p.category}</Badge>
+                            <Badge variant="outline" className="text-xs text-ink-3">{p.category}</Badge>
                           </div>
-                          <p className="mt-1 text-xs text-muted-foreground">{p.unlocks}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            <span className="font-medium text-foreground">Cost:</span> {p.cost}
+                          <p className="mt-1 text-xs2 text-ink-3">{p.unlocks}</p>
+                          <p className="mt-1 text-xs2 text-ink-3">
+                            <span className="font-medium text-ink">Cost:</span> {p.cost}
                           </p>
                         </div>
                         <a href={p.link} target="_blank" rel="noopener noreferrer">
-                          <Button variant="outline" size="sm">Setup ↗</Button>
+                          <Button variant="outline" size="sm">Setup</Button>
                         </a>
                       </div>
 
-                      <div className="mt-3 rounded-md bg-muted/40 p-3 text-xs">
-                        <p className="font-medium text-foreground">Key format</p>
-                        <p className="mt-0.5 text-muted-foreground">{p.keyFormat}</p>
+                      <div className="mt-3 border-l-2 border-rule pl-3 text-xs2">
+                        <p className="font-medium text-ink">Key format</p>
+                        <p className="mt-0.5 text-ink-3">{p.keyFormat}</p>
                       </div>
 
                       <div className="mt-3">
-                        <p className="mb-1.5 text-xs font-medium text-foreground">Setup steps</p>
-                        <ol className="list-decimal space-y-1 pl-4 text-xs text-muted-foreground">
+                        <p className="mb-1.5 text-xs2 font-medium text-ink">Setup steps</p>
+                        <ol className="list-decimal space-y-1 pl-4 text-xs2 text-ink-3">
                           {p.steps.map((s, i) => (
                             <li key={i}>{s}</li>
                           ))}
@@ -952,13 +1121,13 @@ export default function SettingsPage() {
                     </div>
                   ))}
                 </div>
-                <p className="mt-4 text-xs text-muted-foreground">
+                <p className="mt-4 text-xs2 text-ink-3">
                   Note: Firecrawl/Crawl4AI and RapidAPI cover <span className="font-medium">different</span> boards.
                   For LinkedIn/Indeed/ZipRecruiter/Bayt use RapidAPI; for Y Combinator/Wellfound/Instahyre/Sprout/Google
-                  use Firecrawl or Crawl4AI (Crawl4AI can be self-hosted for free). Adzuna/Careerjet/Jooble are official
+                  use Firecrawl or Crawl4AI (Crawl4AI can be self-hosted for free). Adzuna, USAJobs, Reed and Findwork are official
                   aggregators that need no scraping and work alongside the above.
                 </p>
-              </Card>
+              </section>
             </motion.div>
 
             {/* Export Preferences */}
@@ -967,15 +1136,14 @@ export default function SettingsPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
             >
-              <Card className="p-6">
-                <h2 className="mb-4 font-semibold text-foreground">
-                  Export Preferences
-                </h2>
-                <div className="space-y-4">
+              <section className="surface-card p-5">
+                <h2 className="section-title">Export preferences</h2>
+                <div className="mt-2 border-t border-rule" />
+                <div className="mt-3 space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium text-foreground">Default Format</p>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="font-medium text-ink">Default Format</p>
+                      <p className="text-sm text-ink-3">
                         PDF recommended for most applications
                       </p>
                     </div>
@@ -986,8 +1154,8 @@ export default function SettingsPage() {
                   <Separator />
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium text-foreground">Include Photo</p>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="font-medium text-ink">Include Photo</p>
+                      <p className="text-sm text-ink-3">
                         Add your photo to exported resumes
                       </p>
                     </div>
@@ -996,7 +1164,7 @@ export default function SettingsPage() {
                     </Button>
                   </div>
                 </div>
-              </Card>
+              </section>
             </motion.div>
 
             {/* Account Actions */}
@@ -1005,12 +1173,13 @@ export default function SettingsPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
             >
-              <Card className="p-6">
-                <h2 className="mb-4 font-semibold text-foreground">Account</h2>
-                <div className="space-y-3">
+              <section className="surface-card p-5">
+                <h2 className="section-title">Account</h2>
+                <div className="mt-2 border-t border-rule" />
+                <div className="mt-3 space-y-3">
                   <Button
                     variant="outline"
-                    className="w-full justify-start"
+                    className="w-fit justify-start"
                     onClick={handleLogout}
                     disabled={logoutMutation.isPending}
                   >
@@ -1022,57 +1191,11 @@ export default function SettingsPage() {
                     Log Out
                   </Button>
                 </div>
-              </Card>
+              </section>
             </motion.div>
-
-            {/* Danger Zone */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-            >
-              <Card className="border-destructive/30 p-6">
-                <h2 className="mb-4 font-semibold text-destructive">Danger Zone</h2>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-foreground">Delete Account</p>
-                    <p className="text-sm text-muted-foreground">
-                      Permanently delete your account and all data
-                    </p>
-                  </div>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="destructive" size="sm">
-                        Delete
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This action cannot be undone. This will permanently delete your
-                          account and remove all your data including resumes, job matches,
-                          and settings.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          onClick={handleDeleteAccount}
-                        >
-                          Delete Account
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
-              </Card>
-            </motion.div>
-          </div>
+          </PageBody>
         </div>
       </div>
 
-    </AppLayout>
   );
 }

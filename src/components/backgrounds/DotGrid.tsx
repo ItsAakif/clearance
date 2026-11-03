@@ -26,6 +26,7 @@ export function DotGrid({ className }: DotGridProps) {
             height="24"
             patternUnits="userSpaceOnUse"
           >
+            {/* deslop-ignore-next-line 24 — one dot of the approved dot-grid texture, not an icon. */}
             <circle
               cx="1"
               cy="1"

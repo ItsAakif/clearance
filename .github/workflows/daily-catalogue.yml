@@ -1,0 +1,195 @@
+name: Daily catalogue snapshot
+
+# Publishes ONE normalized, excerpt-only catalogue snapshot every day.
+#
+# Shards: one job per ATS provider (13), each against its own throwaway
+# postgres:16 service. A shard cannot be resumed across runs because the DB is
+# fresh, so each shard seeds the registry and then runs the sweep cycle for its
+# provider until the provider's registry is exhausted or the 45-minute budget
+# stops it. `--batches 120` is what lets `--minutes 45` govern: `sweep-all.ts`
+# defaults to a SINGLE batch, so without it a shard would stop after one
+# 500-board slice and would NOT cover its provider.
+#
+# Merge: downloads every shard artifact, dedupes by (source, externalId) and by
+# canonicalKey, rebuilds the manifest (count + per-source counts + sha256) and
+# publishes a `catalogue-YYYY-MM-DD` release.
+#
+# Required repository secrets: NONE. All 13 ATS providers are keyless.
+# If a provider ever needs a key, add `<PROVIDER>_API_KEY` and use the pattern
+# in the "Optional provider key" step below: read the secret into a step env,
+# then gate on `if: env.PROVIDER_API_KEY != ''` and emit a ::notice:: + skip
+# cleanly when it is empty (never fail the whole matrix for an unset secret).
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: daily-catalogue-snapshot
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  DATABASE_URL: postgresql://clearance:clearance@localhost:5432/clearance?schema=public
+
+jobs:
+  shard:
+    name: sweep-${{ matrix.provider }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        provider:
+          - greenhouse
+          - ashby
+          - lever
+          - workable
+          - bamboohr
+          - breezy
+          - jobvite
+          - pinpointhq
+          - teamtailor
+          - recruitee
+          - smartrecruiters
+          - freshteam
+          - rippling
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: clearance
+          POSTGRES_PASSWORD: clearance
+          POSTGRES_DB: clearance
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U clearance -d clearance"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 24
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Generate Prisma client
+        working-directory: backend
+        run: npx prisma generate
+
+      - name: Apply migrations
+        working-directory: backend
+        run: npx prisma migrate deploy
+
+      # The sweep reads CompanyCareerPage, which a fresh shard DB does not have.
+      # The registry dataset is public and keyless (CC-BY-4.0, imported with its
+      # licence + source ref recorded); without this step every shard would
+      # sweep zero boards.
+      - name: Seed company registry
+        working-directory: backend
+        run: npx tsx scripts/import-company-registry.ts --dataset ats-career-page-urls
+
+      # No provider key is required today. When one is, the secret is read into
+      # the step env only and an empty value is reported without failing.
+      - name: Optional provider key
+        env:
+          PROVIDER_API_KEY: ${{ secrets[format('{0}_API_KEY', matrix.provider)] }}
+        run: |
+          if [ -z "$PROVIDER_API_KEY" ]; then
+            echo "::notice::${{ matrix.provider }} uses its keyless endpoint (no secret set)."
+          else
+            echo "::notice::${{ matrix.provider }} key present (value never printed)."
+          fi
+
+      - name: Sweep ${{ matrix.provider }}
+        working-directory: backend
+        env:
+          PROVIDER_API_KEY: ${{ secrets[format('{0}_API_KEY', matrix.provider)] }}
+        run: >-
+          npx tsx scripts/sweep-all.ts
+          --providers ${{ matrix.provider }}
+          --boards 500
+          --max-rows 20000
+          --batches 120
+          --minutes 45
+
+      - name: Export shard snapshot
+        working-directory: backend
+        run: npx tsx scripts/export-catalogue.ts --out out
+
+      - name: Upload shard artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalogue-${{ matrix.provider }}
+          path: backend/out/
+          if-no-files-found: error
+          retention-days: 7
+
+  merge:
+    name: merge-and-release
+    needs: shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Download shard artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: backend/shards
+          pattern: catalogue-*
+
+      - name: Merge shards
+        working-directory: backend
+        run: npx tsx scripts/merge-catalogue.ts --in shards --out out
+
+      - name: Compute release tag
+        id: tag
+        run: echo "name=catalogue-$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: Catalogue snapshot ${{ steps.tag.outputs.name }}
+          body: |
+            Daily normalized catalogue snapshot.
+
+            - `catalogue.jsonl.gz` - one JSON record per active listing (gzip JSONL).
+            - `manifest.json` - version, count, per-source counts, sha256, filename, minAppVersion.
+
+            No full job descriptions are included; records carry the stored
+            `descriptionExcerpt` (max 280 chars) and the derived search facets.
+            Import with `POST /catalogue/import` or
+            `npx tsx scripts/import-catalogue.ts --file catalogue.jsonl.gz --manifest manifest.json`.
+          files: |
+            backend/out/catalogue.jsonl.gz
+            backend/out/manifest.json
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

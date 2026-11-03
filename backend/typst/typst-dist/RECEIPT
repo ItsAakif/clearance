@@ -1,0 +1,9 @@
+typst.version=0.15.1
+typst.asset=typst-x86_64-unknown-linux-musl.tar.xz
+typst.asset.sha256=a6d077d0a95eed5a2eba715b2dae06be954f624ccbf85758a03f389ded33118c
+typst.binary.sha256=29273eaa04f6d00edd0c2bec578f565fc9c65be856bfbffc894567c68ed0b237
+font.asset=source-serif-4.005_Desktop.zip
+font.asset.sha256=549fdb8f9a682bd06944298621404969f6de77c2e422ff3b8244a1dcd6a0c425
+font.SourceSerif4-Regular.ttf.sha256=e5a4ee6a3d87bb9024796be390c6771e2a0eb1883dae25effaf57ca01668e24b
+font.SourceSerif4-Semibold.ttf.sha256=36db62940cb5728b12b1802476dc7fcf4c6c519a7bdd476ba23a4e555fc4655f
+font.SourceSerif4-Bold.ttf.sha256=7cf4f4e1ad74f45058d5bc61716b82560442fbdcd9d3654d2dea96bf6c683d86

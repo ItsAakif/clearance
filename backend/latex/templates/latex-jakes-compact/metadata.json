@@ -1,0 +1,41 @@
+{
+  "id": "latex-jakes-compact",
+  "version": "1.0.0",
+  "name": "LaTeX Jake's Compact",
+  "category": "professional",
+  "description": "Single column, small caps headings with a rule, compact spacing - inspired by Jake's Resume.",
+  "engine": "latex",
+  "variant": "jakes-compact",
+  "engineVersionPins": {
+    "latex": "2022"
+  },
+  "pageSize": "a4",
+  "columns": 1,
+  "maxPages": 2,
+  "supportedSections": [
+    "contact",
+    "summary",
+    "experience",
+    "projects",
+    "education",
+    "skills",
+    "certifications"
+  ],
+  "requiredDictKeys": [
+    "contact",
+    "summary",
+    "experience",
+    "education",
+    "skills"
+  ],
+  "fonts": [],
+  "packages": [],
+  "licence": "Apache-2.0",
+  "attribution": "Clearance",
+  "atsProfile": {
+    "singleColumn": true,
+    "tablesAllowed": false,
+    "iconFonts": false
+  },
+  "thumbnail": null
+}

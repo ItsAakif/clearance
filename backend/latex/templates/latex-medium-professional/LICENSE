@@ -1,0 +1,27 @@
+Clearance resume template: latex-medium-professional ("Medium Length Professional")
+Copyright 2026 Clearance. All rights reserved.
+
+  Template id:      latex-medium-professional
+  Template version: 1.0.0
+  Layout:          US Letter, 11pt, centred uppercase name, uppercase ruled section
+                   headings, right-aligned dates, hyphen bullets, hanging-indent skills
+  Attribution:     Clearance
+
+Clearance template, original implementation. Inspired by the "Medium Length
+Professional CV" class by Trey Hunner / LaTeXTemplates (LPPL-1.3c), but no upstream
+source is copied: the document compiled at render time is generated per resume by
+backend/src/render/latexExport.ts.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+these files except in compliance with the License. A copy of the License is
+published at http://www.apache.org/licenses/LICENSE-2.0
+
+THIRD-PARTY WORKS THIS TEMPLATE RENDERS WITH. They are separate works under their
+own licences and NONE of them is part of this file:
+
+  Engine  TeX Live 2022 (pdfTeX 3.141592653-2.6-1.40.24)   LPPL-1.3c
+          shipped as the pinned clearance/latex-worker image, built from Debian
+          bookworm's texlive-latex-base and texlive-fonts-recommended packages.
+  Fonts   Computer Modern, shipped with the same TeX Live image.
+  Packages  none vendored. The generated document loads `fontenc`, `inputenc`, `cmap`
+          and `geometry`, all from texlive-latex-base.

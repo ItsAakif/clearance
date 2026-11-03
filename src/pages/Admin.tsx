@@ -2,12 +2,18 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ShieldCheck, RefreshCw, Images, Loader2 } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
-import { AppLayout } from '@/components/layout';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { PageBody } from '@/components/layout';
 import { adminApi } from '@/services/api/admin';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
+import { ProvidersSection } from '@/features/admin/ProvidersSection';
+import { RegistrySection } from '@/features/admin/RegistrySection';
+import { RunsSection } from '@/features/admin/RunsSection';
+import { SourcesSection } from '@/features/admin/SourcesSection';
+import { FailuresSection } from '@/features/admin/FailuresSection';
+import { CostsSection } from '@/features/admin/CostsSection';
 
 export default function AdminPage() {
   const { user, isLoading } = useAuth();
@@ -44,11 +50,9 @@ export default function AdminPage() {
 
   if (isLoading) {
     return (
-      <AppLayout>
-        <div className="flex h-full items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      </AppLayout>
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
     );
   }
 
@@ -57,42 +61,34 @@ export default function AdminPage() {
   }
 
   return (
-    <AppLayout>
-      <div className="flex h-full flex-col overflow-auto">
-        <header className="border-b border-border bg-card px-6 py-4">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-primary" />
-            <div>
-              <h1 className="text-lg font-semibold text-foreground">Admin</h1>
-              <p className="text-sm text-muted-foreground">Templates and maintenance tooling</p>
-            </div>
-          </div>
+    <div className="flex h-full flex-col overflow-auto">
+        <header className="border-b border-border bg-paper px-8 py-5">
+          <h1 className="page-title text-ink">Admin</h1>
+          <p className="mt-1 text-sm text-ink-3">Templates and maintenance tooling</p>
         </header>
 
-        <div className="mx-auto w-full max-w-5xl space-y-6 p-6">
-          <Card className="p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Images className="h-5 w-5 text-primary" />
-                <h2 className="font-semibold text-foreground">Templates</h2>
-              </div>
+        <PageBody width="data" className="space-y-6 px-8 py-8">
+          <section className="surface-card p-5">
+            <div className="flex items-baseline justify-between gap-4">
+              <h2 className="section-title">Templates</h2>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => refreshTemplatesMutation.mutate()} disabled={refreshTemplatesMutation.isPending}>
                   {refreshTemplatesMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                  Refresh Metadata
+                  Refresh metadata
                 </Button>
                 <Button onClick={() => generatePreviewsMutation.mutate()} disabled={generatePreviewsMutation.isPending}>
                   {generatePreviewsMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Images className="mr-2 h-4 w-4" />}
-                  Generate Previews
+                  Generate previews
                 </Button>
               </div>
             </div>
-            <div className="space-y-3">
+            <div className="mt-2 border-t border-rule" />
+            <div>
               {(templatesQuery.data || []).map((template) => (
-                <div key={template.id} className="flex items-center justify-between rounded-lg border border-border p-3 text-sm">
+                <div key={template.id} className="flex items-center justify-between border-b border-rule py-2.5 text-sm">
                   <div>
-                    <p className="font-medium text-foreground">{template.id}</p>
-                    <p className="text-muted-foreground">{template.fileName} · {template.sectionCount} sections</p>
+                    <p className="font-medium text-ink">{template.id}</p>
+                    <p className="text-ink-3">{template.fileName} · {template.sectionCount} sections</p>
                   </div>
                   <span className={template.hasPreview ? 'text-success' : 'text-warning'}>
                     {template.hasPreview ? 'Preview ready' : 'Preview missing'}
@@ -100,9 +96,14 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
-          </Card>
-        </div>
+          </section>
+          <ProvidersSection />
+          <RegistrySection />
+          <RunsSection />
+          <SourcesSection />
+          <FailuresSection />
+          <CostsSection />
+        </PageBody>
       </div>
-    </AppLayout>
   );
 }

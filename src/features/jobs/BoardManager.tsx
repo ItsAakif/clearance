@@ -12,8 +12,12 @@ import {
 import { Trash2, Plus, Loader2 } from "lucide-react";
 import { useBoards, useCreateBoard, useDeleteBoard } from "@/hooks/useJobs";
 import type { JobBoard } from "@/services/api";
+import { getBoardKeyHint } from "@/features/jobs/boardKeyHints";
 
 const BOARD_TYPES = ['greenhouse', 'ashby', 'lever', 'workday', 'rss'] as const;
+
+const DEPRECATED_AGGREGATOR_PROVIDERS = ['careerjet', 'jooble'];
+const ACTIVE_AGGREGATOR_PROVIDERS = ['adzuna', 'usajobs', 'reed', 'findwork'];
 
 export function BoardManager() {
   const { data: boards, isLoading } = useBoards();
@@ -47,7 +51,7 @@ export function BoardManager() {
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold">Job Boards</h3>
-          <p className="text-xs text-muted-foreground">Add the boards you want to scan</p>
+          <p className="text-xs text-ink-3">Add the boards you want to scan</p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
@@ -105,26 +109,59 @@ export function BoardManager() {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2 py-4 text-sm text-ink-3">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading boards…
         </div>
       ) : boards && boards.length > 0 ? (
         <div className="space-y-2">
-          {boards.map((b) => (
-            <div key={b.id} className="flex items-center justify-between rounded-md border p-2 text-sm">
+          {boards.map((b) => {
+            // Missing-key failures name the exact key per board type (hard
+            // scraper -> RapidAPI, medium scraper -> Firecrawl/Crawl4AI/
+            // RapidAPI, aggregator -> provider key). Real failures keep the
+            // generic "failing" badge with the full error in the tooltip.
+            const keyHint = getBoardKeyHint({
+              type: b.type,
+              name: b.name,
+              scraperProvider: b.scraperProvider,
+              aggregatorProvider: b.aggregatorProvider,
+              error: b.sourceHealth?.lastError,
+            });
+            return (
+            <div key={b.id} className="flex items-center justify-between rounded-control border p-2 text-sm">
               <div>
                 <span className="font-medium">{b.name}</span>
-                <span className="ml-2 rounded bg-secondary px-1.5 py-0.5 text-xs capitalize text-muted-foreground">{b.type}</span>
-                {b.boardId && <span className="ml-2 text-xs text-muted-foreground">#{b.boardId}</span>}
+                <span className="ml-2 rounded bg-secondary px-1.5 py-0.5 text-xs capitalize text-ink-3">{b.type}</span>
+                {b.type === 'aggregator' && DEPRECATED_AGGREGATOR_PROVIDERS.includes(b.aggregatorProvider ?? '') && (
+                  <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs text-ink-3">Discontinued</span>
+                )}
+                {b.aggregatorProvider && <span className="ml-2 text-xs text-ink-3">{b.aggregatorProvider}</span>}
+                {b.boardId && <span className="ml-2 text-xs text-ink-3">#{b.boardId}</span>}
+                {b.sourceHealth?.status === 'failed' && (
+                  <span
+                    className="ml-2 text-xs text-destructive"
+                    title={(b.sourceHealth.lastError ?? '').slice(0, 160)}
+                  >
+                    failing
+                  </span>
+                )}
+                {keyHint && (
+                  <span className="ml-2 text-xs text-warning">
+                    {keyHint}
+                  </span>
+                )}
+                {b.sourceHealth?.status === 'healthy' && b.sourceHealth.lastResultCount === 0 && (
+                  <span className="ml-2 text-xs text-ink-3">0 results</span>
+                )}
               </div>
               <Button size="icon" variant="ghost" onClick={() => deleteBoard.mutate(b.id)}>
                 <Trash2 className="h-4 w-4 text-destructive" />
               </Button>
             </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
-        <p className="py-4 text-center text-sm text-muted-foreground">
+        <p className="py-4 text-center text-sm text-ink-3">
           No boards yet. Add one to start scanning jobs.
         </p>
       )}

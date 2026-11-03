@@ -5,6 +5,8 @@
 
 import { leaseNextSearchKey, hasSearchKey, type KeyRecord } from '../ai/keyManager.js';
 import type { RawJob } from './index.js';
+import { parseQuery, matchesQuery } from './queryMatch.js';
+import { classify } from '../discovery/provenance.js';
 
 export interface SearchConfig {
   query: string;       // e.g. '"Software Engineer" OR "Backend" remote'
@@ -58,17 +60,30 @@ async function searchJobsTavily(config: SearchConfig, apiKey: string): Promise<R
 
   return results
     .filter((r) => r.url && r.title)
-    .map((r, i) => ({
-      externalId: `tavily-${i}-${Buffer.from(r.url).toString('base64').slice(0, 16)}`,
-      source: 'search',
-      sourceUrl: r.url,
-      title: r.title || 'Untitled Role',
-      company: extractCompanyFromUrl(r.url) || extractCompanyFromTitle(r.title) || 'Unknown',
-      location: extractLocation(r.content || ''),
-      description: r.content || r.raw_content || '',
-      applyUrl: r.url,
-      postedAt: r.published_date ? new Date(r.published_date) : undefined,
-    }));
+    .map((r, i) => {
+      // Wave 3 (T662, ADR-028): Tavily `published_date` is a search-engine
+      // index signal, never a posted date. It goes through `classify` with
+      // `index-date` so `postedAt` comes back null STRUCTURALLY (the N4 proof
+      // point); the verbatim signal is kept in `postedAtRaw` for audit.
+      const dated = classify({
+        postedAt: r.published_date,
+        postedAtSource: 'index-date',
+        postedAtRaw: r.published_date,
+      });
+      return {
+        externalId: `tavily-${i}-${Buffer.from(r.url).toString('base64').slice(0, 16)}`,
+        source: 'search',
+        sourceUrl: r.url,
+        title: r.title || 'Untitled Role',
+        company: extractCompanyFromUrl(r.url) || extractCompanyFromTitle(r.title) || 'Unknown',
+        location: extractLocation(r.content || ''),
+        description: r.content || r.raw_content || '',
+        applyUrl: r.url,
+        postedAt: dated.postedAt,
+        postedAtSource: dated.postedAtSource,
+        postedAtRaw: dated.postedAtRaw,
+      };
+    });
 }
 
 async function searchJobsExa(config: SearchConfig, apiKey: string): Promise<RawJob[]> {
@@ -99,17 +114,29 @@ async function searchJobsExa(config: SearchConfig, apiKey: string): Promise<RawJ
 
   return results
     .filter((r) => r.url && r.title)
-    .map((r, i) => ({
-      externalId: `exa-${i}-${Buffer.from(r.url).toString('base64').slice(0, 16)}`,
-      source: 'search',
-      sourceUrl: r.url,
-      title: r.title || 'Untitled Role',
-      company: extractCompanyFromUrl(r.url) || extractCompanyFromTitle(r.title) || 'Unknown',
-      location: extractLocation(r.text || ''),
-      description: r.text || r.summary || '',
-      applyUrl: r.url,
-      postedAt: r.publishedDate ? new Date(r.publishedDate) : undefined,
-    }));
+    .map((r, i) => {
+      // Wave 3 (T662, ADR-028): Exa `publishedDate` is a search-engine index
+      // signal, never a posted date - same `classify` + `index-date`
+      // treatment as Tavily above.
+      const dated = classify({
+        postedAt: r.publishedDate,
+        postedAtSource: 'index-date',
+        postedAtRaw: r.publishedDate,
+      });
+      return {
+        externalId: `exa-${i}-${Buffer.from(r.url).toString('base64').slice(0, 16)}`,
+        source: 'search',
+        sourceUrl: r.url,
+        title: r.title || 'Untitled Role',
+        company: extractCompanyFromUrl(r.url) || extractCompanyFromTitle(r.title) || 'Unknown',
+        location: extractLocation(r.text || ''),
+        description: r.text || r.summary || '',
+        applyUrl: r.url,
+        postedAt: dated.postedAt,
+        postedAtSource: dated.postedAtSource,
+        postedAtRaw: dated.postedAtRaw,
+      };
+    });
 }
 
 /**
@@ -127,10 +154,10 @@ async function searchJobsKeyless(config: SearchConfig): Promise<RawJob[]> {
   const items: any[] = Array.isArray(data?.data) ? data.data : [];
   if (items.length === 0) return [];
 
-  const q = (config.query || '').toLowerCase();
-  const filtered = q
+  const needle = parseQuery(config.query || '');
+  const filtered = needle.isMeaningful
     ? items.filter((j) =>
-        `${j.title || ''} ${j.company_name || ''} ${j.tags ? j.tags.join(' ') : ''}`.toLowerCase().includes(q.split('"')[0].split(' OR ')[0].trim())
+        matchesQuery(`${j.title || ''} ${j.company_name || ''} ${j.tags ? j.tags.join(' ') : ''}`, needle)
       )
     : items;
 
@@ -145,6 +172,14 @@ async function searchJobsKeyless(config: SearchConfig): Promise<RawJob[]> {
     description: j.description || '',
     applyUrl: j.url || '',
     postedAt: j.created_at ? new Date(j.created_at) : undefined,
+    // Wave 3 (T662, ADR-028): the Arbeitnow keyless fallback is a job-board
+    // API, not a search engine - its board-native `created_at` is a genuine
+    // posted claim -> `source-posted` (date kept). Only the Tavily/Exa index
+    // signals above are `index-date`. Recorded discrepancy vs the task's
+    // shorthand "search tier -> index-date", which covers the two keyed
+    // providers; the CODE and ADR-028 win here.
+    postedAtSource: j.created_at ? ('source-posted' as const) : undefined,
+    postedAtRaw: j.created_at ?? undefined,
   }));
 }
 

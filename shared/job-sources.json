@@ -1,0 +1,433 @@
+{
+  "sources": [
+    "greenhouse",
+    "ashby",
+    "lever",
+    "workday",
+    "rss",
+    "json",
+    "smartrecruiters",
+    "recruitee",
+    "personio",
+    "jobicy",
+    "hnalgolia",
+    "adzuna",
+    "usajobs",
+    "reed",
+    "findwork",
+    "workable",
+    "bamboohr",
+    "breezyhr",
+    "jobvite",
+    "teamtailor",
+    "pinpoint",
+    "freshteam",
+    "career-page",
+    "search",
+    "scraper",
+    "dorking",
+    "browser"
+  ],
+  "boardTypes": [
+    "greenhouse",
+    "ashby",
+    "lever",
+    "workday",
+    "rss",
+    "json",
+    "search",
+    "smartrecruiters",
+    "recruitee",
+    "personio",
+    "jobicy",
+    "hnalgolia",
+    "scraper",
+    "aggregator",
+    "workable",
+    "bamboohr",
+    "breezyhr",
+    "jobvite",
+    "teamtailor",
+    "pinpoint",
+    "freshteam",
+    "career-page",
+    "dorking",
+    "browser"
+  ],
+  "providers": [
+    {
+      "id": "greenhouse",
+      "type": "greenhouse",
+      "sourceIds": [
+        "greenhouse"
+      ],
+      "kind": "api",
+      "tier": 1,
+      "auth": "keyless",
+      "requires": [
+        "board"
+      ],
+      "enabledByDefault": true,
+      "explain": "Fetched from the public Greenhouse boards API using the company board token (keyless)."
+    },
+    {
+      "id": "ashby",
+      "type": "ashby",
+      "sourceIds": [
+        "ashby"
+      ],
+      "kind": "api",
+      "tier": 1,
+      "auth": "keyless",
+      "requires": [
+        "board"
+      ],
+      "enabledByDefault": true,
+      "explain": "Fetched from the public Ashby posting API using the company board token (keyless)."
+    },
+    {
+      "id": "lever",
+      "type": "lever",
+      "sourceIds": [
+        "lever"
+      ],
+      "kind": "api",
+      "tier": 1,
+      "auth": "keyless",
+      "requires": [
+        "board"
+      ],
+      "enabledByDefault": false,
+      "explain": "Fetched from the public Lever postings API using the company site token (keyless)."
+    },
+    {
+      "id": "workday",
+      "type": "workday",
+      "sourceIds": [
+        "workday"
+      ],
+      "kind": "feed",
+      "tier": 2,
+      "auth": "keyless",
+      "requires": [
+        "feedUrl"
+      ],
+      "enabledByDefault": false,
+      "explain": "Fetched from the Workday RSS/JSON feed URL (keyless)."
+    },
+    {
+      "id": "rss",
+      "type": "rss",
+      "sourceIds": [
+        "rss"
+      ],
+      "kind": "feed",
+      "tier": 2,
+      "auth": "keyless",
+      "requires": [
+        "feedUrl"
+      ],
+      "enabledByDefault": true,
+      "explain": "Fetched from the provided RSS/Atom feed URL (keyless)."
+    },
+    {
+      "id": "json",
+      "type": "json",
+      "sourceIds": [
+        "json",
+        "jobicy"
+      ],
+      "kind": "json",
+      "tier": 2,
+      "auth": "keyless",
+      "requires": [
+        "feedUrl"
+      ],
+      "enabledByDefault": true,
+      "explain": "Fetched from the provided JSON feed URL (keyless); a Jobicy feed URL routes to the Jobicy parser instead."
+    },
+    {
+      "id": "search",
+      "type": "search",
+      "sourceIds": [
+        "search"
+      ],
+      "kind": "search",
+      "tier": 5,
+      "auth": {
+        "byok": "tavily"
+      },
+      "requires": [],
+      "enabledByDefault": true,
+      "explain": "Run as a web search via your Tavily/Exa key (or the keyless fallback)."
+    },
+    {
+      "id": "smartrecruiters",
+      "type": "smartrecruiters",
+      "sourceIds": [
+        "smartrecruiters"
+      ],
+      "kind": "api",
+      "tier": 1,
+      "auth": "keyless",
+      "requires": [
+        "board"
+      ],
+      "enabledByDefault": true,
+      "explain": "Fetched from the public SmartRecruiters postings API using the company token (keyless)."
+    },
+    {
+      "id": "recruitee",
+      "type": "recruitee",
+      "sourceIds": [
+        "recruitee"
+      ],
+      "kind": "api",
+      "tier": 1,
+      "auth": "keyless",
+      "requires": [
+        "board"
+      ],
+      "enabledByDefault": true,
+      "explain": "Fetched from the public Recruitee offers API using the company token (keyless)."
+    },
+    {
+      "id": "personio",
+      "type": "personio",
+      "sourceIds": [
+        "personio"
+      ],
+      "kind": "api",
+      "tier": 1,
+      "auth": "keyless",
+      "requires": [
+        "board"
+      ],
+      "enabledByDefault": true,
+      "explain": "Fetched from the public Personio postings API using the company subdomain (keyless)."
+    },
+    {
+      "id": "jobicy",
+      "type": "jobicy",
+      "sourceIds": [
+        "jobicy"
+      ],
+      "kind": "api",
+      "tier": 1,
+      "auth": "keyless",
+      "requires": [],
+      "enabledByDefault": true,
+      "explain": "Fetched from Jobicy's keyless remote-jobs API."
+    },
+    {
+      "id": "hnalgolia",
+      "type": "hnalgolia",
+      "sourceIds": [
+        "hnalgolia"
+      ],
+      "kind": "api",
+      "tier": 1,
+      "auth": "keyless",
+      "requires": [],
+      "enabledByDefault": true,
+      "explain": "Fetched from the Hacker News (Algolia) jobs API (keyless)."
+    },
+    {
+      "id": "scraper",
+      "type": "scraper",
+      "sourceIds": [
+        "linkedin",
+        "indeed",
+        "glassdoor",
+        "ziprecruiter",
+        "bayt",
+        "naukri",
+        "wellfound",
+        "instahyre",
+        "sprout",
+        "googlesearch",
+        "ycombinator",
+        "scraper"
+      ],
+      "kind": "scraper",
+      "tier": 4,
+      "auth": {
+        "byok": "firecrawl"
+      },
+      "requires": [],
+      "enabledByDefault": true,
+      "explain": "Scraped via your configured backend (Firecrawl/Crawl4AI for YC/Wellfound/Instahyre/Sprout/Google; RapidAPI for LinkedIn/Indeed/ZipRecruiter/Glassdoor/Bayt)."
+    },
+    {
+      "id": "aggregator",
+      "type": "aggregator",
+      "sourceIds": [
+        "adzuna",
+        "usajobs",
+        "reed",
+        "findwork"
+      ],
+      "kind": "aggregator",
+      "tier": 1,
+      "auth": {
+        "byok": "adzuna"
+      },
+      "requires": [
+        "aggregatorProvider"
+      ],
+      "enabledByDefault": true,
+      "explain": "Fetched from an official aggregator API (Adzuna/USAJobs/Reed/Findwork) using your BYOK key."
+    },
+    {
+      "id": "workable",
+      "type": "workable",
+      "sourceIds": [
+        "workable"
+      ],
+      "kind": "api",
+      "tier": 1,
+      "auth": "keyless",
+      "requires": [
+        "board"
+      ],
+      "enabledByDefault": false,
+      "explain": "Fetched from the public Workable board API using the company id from the jobs.workable.com URL (keyless)."
+    },
+    {
+      "id": "bamboohr",
+      "type": "bamboohr",
+      "sourceIds": [
+        "bamboohr"
+      ],
+      "kind": "api",
+      "tier": 1,
+      "auth": "keyless",
+      "requires": [
+        "board"
+      ],
+      "enabledByDefault": false,
+      "explain": "Fetched from the public BambooHR careers feed using the company subdomain (keyless)."
+    },
+    {
+      "id": "breezyhr",
+      "type": "breezyhr",
+      "sourceIds": [
+        "breezyhr"
+      ],
+      "kind": "api",
+      "tier": 1,
+      "auth": "keyless",
+      "requires": [
+        "board"
+      ],
+      "enabledByDefault": false,
+      "explain": "Fetched from the public BreezyHR portal feed using the portal slug (keyless)."
+    },
+    {
+      "id": "jobvite",
+      "type": "jobvite",
+      "sourceIds": [
+        "jobvite"
+      ],
+      "kind": "api",
+      "tier": 1,
+      "auth": "keyless",
+      "requires": [
+        "board"
+      ],
+      "enabledByDefault": false,
+      "explain": "Fetched from the public Jobvite careers site using the site slug, with per-job details from the page JSON-LD (keyless)."
+    },
+    {
+      "id": "teamtailor",
+      "type": "teamtailor",
+      "sourceIds": [
+        "teamtailor"
+      ],
+      "kind": "api",
+      "tier": 1,
+      "auth": "keyless",
+      "requires": [
+        "board"
+      ],
+      "enabledByDefault": false,
+      "explain": "Fetched from the public Teamtailor careers site using the company subdomain, with per-job details from the page JSON-LD (keyless)."
+    },
+    {
+      "id": "pinpoint",
+      "type": "pinpoint",
+      "sourceIds": [
+        "pinpoint"
+      ],
+      "kind": "api",
+      "tier": 1,
+      "auth": "keyless",
+      "requires": [
+        "board"
+      ],
+      "enabledByDefault": false,
+      "explain": "Fetched from the public Pinpoint postings feed using the company subdomain (keyless)."
+    },
+    {
+      "id": "freshteam",
+      "type": "freshteam",
+      "sourceIds": [
+        "freshteam"
+      ],
+      "kind": "api",
+      "tier": 1,
+      "auth": "keyless",
+      "requires": [
+        "board"
+      ],
+      "enabledByDefault": false,
+      "explain": "Fetched from the public Freshteam careers site using the company domain, with per-job details from the page JSON-LD (keyless)."
+    },
+    {
+      "id": "career-page",
+      "type": "career-page",
+      "sourceIds": [
+        "career-page"
+      ],
+      "kind": "feed",
+      "tier": 3,
+      "auth": "keyless",
+      "requires": [
+        "feedUrl"
+      ],
+      "enabledByDefault": false,
+      "explain": "Fetched from the company career page URL over plain HTTP: JSON-LD JobPosting blocks first, a recognised ATS link second (keyless)."
+    },
+    {
+      "id": "dorking",
+      "type": "dorking",
+      "sourceIds": [
+        "dorking"
+      ],
+      "kind": "search",
+      "tier": 5,
+      "auth": {
+        "byok": "tavily"
+      },
+      "requires": [],
+      "enabledByDefault": false,
+      "explain": "Template-driven dork queries run through the existing search backend (your Tavily/Exa key or the keyless fallback); every row is labelled index-found, never posted."
+    },
+    {
+      "id": "browser",
+      "type": "browser",
+      "sourceIds": [
+        "browser"
+      ],
+      "kind": "browser",
+      "tier": 4,
+      "auth": "keyless",
+      "requires": [
+        "feedUrl",
+        "deepMode"
+      ],
+      "enabledByDefault": false,
+      "explain": "ENHANCEMENT ONLY (ADR-029): last-resort rendered-DOM reader for a company career page your cheaper tiers could not read (JSON-LD first, recognised ATS link second). Deep mode only, after a cheaper tier failed for the same URL; needs the optional browser engine, otherwise skipped."
+    }
+  ]
+}

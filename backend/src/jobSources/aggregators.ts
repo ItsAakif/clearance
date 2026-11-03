@@ -1,4 +1,4 @@
-// Official job-aggregator APIs (BYOK) - Adzuna, Careerjet, Jooble.
+// Official job-aggregator APIs (BYOK) - Adzuna, USAJobs, Reed, Findwork.
 //
 // Unlike scraping, these are official, stable endpoints that aggregate listings
 // from LinkedIn/Indeed/ATS platforms natively. They offer permanent free tiers
@@ -6,22 +6,51 @@
 // (BYOK), so quota stays on them and the app is free to self-host at scale.
 //
 //   - Adzuna:     app_id + app_key (free 2,500 req/mo), global, structured JSON.
-//   - Careerjet:  affiliate ID (free, 90+ countries), JSON/XML. Needs attribution.
-//   - Jooble:     single API key (free via partner portal), JSON POST.
+//   - USAJobs:    email + API key (fully free, no paid tier), US federal.
+//   - Reed:      single API key via Basic auth, UK, 100 results/request.
+//   - Findwork:  single token, dev/design aggregator.
 //
-// All three are leased via the AIProviderKey table (provider names below) with
-// env fallback (ADZUNA_APP_ID/ADZUNA_APP_KEY, CAREERJET_AFFID, JOOBLE_API_KEY).
+// All four are leased via the AIProviderKey table (provider names below) with
+// env fallback (ADZUNA_APP_ID/ADZUNA_APP_KEY, USAJOBS_EMAIL/USAJOBS_API_KEY,
+// REED_API_KEY, FINDWORK_API_KEY).
 
 import { leaseNextKey, markKeySuccess, markKeyFailure } from '../ai/keyManager.js';
+import type { KeyRecord } from '../ai/keyManager.js';
 import type { RawJob } from './index.js';
+import { fetchUsaJobs } from './aggregators.usajobs.js';
+import { fetchReed } from './aggregators.reed.js';
+import { fetchFindwork } from './aggregators.findwork.js';
 
-export type AggregatorProvider = 'adzuna' | 'careerjet' | 'jooble';
+// Runtime board set. Adzuna is unchanged; careerjet/jooble were retired (see
+// .planning/decisions/ADR-006) because their keys need partner/publisher approval.
+export const AGGREGATOR_PROVIDERS = ['adzuna', 'usajobs', 'reed', 'findwork'] as const;
+export type AggregatorProvider = (typeof AGGREGATOR_PROVIDERS)[number];
+
+// Retired providers. Kept as data (not deleted) so dispatch can explain itself and so
+// stored keys/boards stay identifiable. No key or board row is ever deleted for these.
+export const DEPRECATED_AGGREGATOR_PROVIDERS = ['careerjet', 'jooble'] as const;
+
+export function isAggregatorProvider(value: string | null | undefined): value is AggregatorProvider {
+  return !!value && (AGGREGATOR_PROVIDERS as readonly string[]).includes(value);
+}
+
+export function isDeprecatedAggregatorProvider(value: string | null | undefined): boolean {
+  return !!value && (DEPRECATED_AGGREGATOR_PROVIDERS as readonly string[]).includes(value);
+}
 
 export interface AggregatorConfig {
   query: string;
   location?: string;
   resultsWanted?: number;
   userId?: string;
+}
+
+// D3: slot for a fetcher to hand back the exact DB KeyRecord it leased, so
+// fetchAggregator marks success/failure on the SAME row. A second
+// leaseNextKey call would rotate (keyManager.ts) and could attribute the
+// outcome (incl. 429 cooldown) to a different key.
+export interface AggregatorKeySlot {
+  record?: KeyRecord | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,7 +102,7 @@ export function buildAdzunaUrl(
   return url.toString();
 }
 
-async function fetchAdzuna(config: AggregatorConfig): Promise<RawJob[]> {
+async function fetchAdzuna(config: AggregatorConfig, slot?: AggregatorKeySlot): Promise<RawJob[]> {
   // Adzuna needs two secrets; we store them as a single DB key "id:key" or via
   // env ADZUNA_APP_ID + ADZUNA_APP_KEY. Prefer env split, else parse DB key.
   const appId = process.env.ADZUNA_APP_ID || '';
@@ -82,9 +111,15 @@ async function fetchAdzuna(config: AggregatorConfig): Promise<RawJob[]> {
   if (!appId || !appKey) {
     // DB key may hold "appId:appKey" combined
     const rec = await leaseNextKey('adzuna', config.userId);
+    if (slot) slot.record = rec;
     leasedKey = rec.apiKey;
   }
-  const [id, key] = appId && appKey ? [appId, appKey] : leasedKey.split(':');
+  // Merge env halves with the leased halves so a partial env plus a stored key
+  // still works. A stored key without a colon is treated as the app id with a
+  // missing app key (clear error below, surfaced via source health, no crash).
+  const leasedParts = leasedKey ? leasedKey.split(':') : [];
+  const id = (appId || (leasedParts[0] ?? '')).trim();
+  const key = (appKey || leasedParts.slice(1).join(':')).trim();
 
   if (!id || !key) {
     throw new Error('Adzuna requires APP_ID and APP_KEY. Set ADZUNA_APP_ID/ADZUNA_APP_KEY or store "appId:appKey" as an Adzuna key.');
@@ -107,86 +142,10 @@ async function fetchAdzuna(config: AggregatorConfig): Promise<RawJob[]> {
     description: j.description || '',
     applyUrl: j.redirect_url || j.url || '',
     postedAt: j.created ? new Date(j.created) : undefined,
-  }));
-}
-
-// ---------------------------------------------------------------------------
-// Careerjet  (https://www.careerjet.com/partners/)
-// Auth: affiliate ID. Free basic key. Returns JSON (accept JSON header).
-// Endpoint: GET https://www.careerjet.com/api/1.0?affid=&q=&location=&n=
-// Requires an attribution link on results (free tier condition).
-// ---------------------------------------------------------------------------
-
-async function fetchCareerjet(config: AggregatorConfig): Promise<RawJob[]> {
-  const affid = process.env.CAREERJET_AFFID || '';
-  let leased = '';
-  if (!affid) {
-    const rec = await leaseNextKey('careerjet', config.userId);
-    leased = rec.apiKey;
-  }
-  const id = affid || leased;
-  if (!id) throw new Error('Careerjet requires an affiliate ID. Set CAREERJET_AFFID or store it as a Careerjet key.');
-
-  const url = new URL('https://www.careerjet.com/api/1.0');
-  url.searchParams.set('affid', id);
-  url.searchParams.set('q', config.query);
-  if (config.location) url.searchParams.set('location', config.location);
-  url.searchParams.set('n', String(Math.min(config.resultsWanted ?? 20, 50)));
-
-  const res = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`Careerjet failed: ${res.status}`);
-  const data: any = await res.json();
-  const items: any[] = data.jobs || [];
-  return items.map((j, i) => ({
-    externalId: `careerjet-${j.jobid ?? i}`,
-    source: 'careerjet',
-    sourceUrl: j.url || '',
-    title: j.title || 'Untitled Role',
-    company: j.company || 'Unknown',
-    location: j.locations || config.location || undefined,
-    description: j.description || '',
-    applyUrl: j.url || '',
-    postedAt: j.date ? new Date(j.date) : undefined,
-  }));
-}
-
-// ---------------------------------------------------------------------------
-// Jooble  (https://jooble.org/api/)
-// Auth: single API key. POST JSON to https://jooble.org/api/{key}
-// Body: { keywords, location, page }
-// ---------------------------------------------------------------------------
-
-async function fetchJooble(config: AggregatorConfig): Promise<RawJob[]> {
-  const envKey = process.env.JOOBLE_API_KEY || '';
-  let key = envKey;
-  if (!key) {
-    const rec = await leaseNextKey('jooble', config.userId);
-    key = rec.apiKey;
-  }
-  if (!key) throw new Error('Jooble requires an API key. Set JOOBLE_API_KEY or store it as a Jooble key.');
-
-  const res = await fetch(`https://jooble.org/api/${key}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      keywords: config.query,
-      location: config.location || '',
-      page: 1,
-    }),
-  });
-  if (!res.ok) throw new Error(`Jooble failed: ${res.status}`);
-  const data: any = await res.json();
-  const items: any[] = data.jobs || [];
-  return items.map((j, i) => ({
-    externalId: `jooble-${j.id ?? i}`,
-    source: 'jooble',
-    sourceUrl: j.link || '',
-    title: j.title || 'Untitled Role',
-    company: j.company || 'Unknown',
-    location: j.location || config.location || undefined,
-    description: j.snippet || j.description || '',
-    applyUrl: j.link || '',
-    postedAt: j.updated ? new Date(j.updated) : undefined,
+    // Wave 3 (T662, ADR-028): Adzuna `created` is an explicit posted claim ->
+    // `source-posted`.
+    postedAtSource: j.created ? ('source-posted' as const) : undefined,
+    postedAtRaw: j.created ?? undefined,
   }));
 }
 
@@ -194,21 +153,43 @@ async function fetchJooble(config: AggregatorConfig): Promise<RawJob[]> {
 // Public entry
 // ---------------------------------------------------------------------------
 
-export async function fetchAggregator(provider: AggregatorProvider, config: AggregatorConfig): Promise<RawJob[]> {
-  const fn = provider === 'adzuna' ? fetchAdzuna : provider === 'careerjet' ? fetchCareerjet : fetchJooble;
+const AGGREGATOR_FETCHERS: Record<AggregatorProvider, (c: AggregatorConfig, slot?: AggregatorKeySlot) => Promise<RawJob[]>> = {
+  adzuna: fetchAdzuna,
+  usajobs: fetchUsaJobs,
+  reed: fetchReed,
+  findwork: fetchFindwork,
+};
+
+export async function fetchAggregator(provider: string, config: AggregatorConfig): Promise<RawJob[]> {
+  if (isDeprecatedAggregatorProvider(provider)) {
+    throw new Error(
+      `Aggregator "${provider}" is no longer supported. Update or delete this board in Settings.`
+    );
+  }
+  if (!isAggregatorProvider(provider)) {
+    throw new Error(
+      `Unknown aggregator "${provider}". Supported: ${AGGREGATOR_PROVIDERS.join(', ')}.`
+    );
+  }
+  const fn = AGGREGATOR_FETCHERS[provider];
+  const slot: AggregatorKeySlot = {};
   try {
-    const jobs = await fn(config);
-    // best-effort success marking (only works for DB keys)
-    try {
-      const rec = await leaseNextKey(provider, config.userId);
-      await markKeySuccess(rec);
-    } catch { /* env key - nothing to mark */ }
+    const jobs = await fn(config, slot);
+    // Best-effort success marking on the SAME key the fetch leased. No second
+    // leaseNextKey here: rotation could land on a different row. Env-key
+    // fetches leave slot.record unset (nothing to mark) - also no lease.
+    if (slot.record) {
+      try {
+        await markKeySuccess(slot.record);
+      } catch { /* marking must never fail the fetch */ }
+    }
     return jobs;
   } catch (e) {
-    try {
-      const rec = await leaseNextKey(provider, config.userId);
-      await markKeyFailure(rec, String((e as Error).message).includes('429'));
-    } catch { /* env key */ }
+    if (slot.record) {
+      try {
+        await markKeyFailure(slot.record, String((e as Error).message).includes('429'));
+      } catch { /* marking must never fail the fetch */ }
+    }
     throw e;
   }
 }

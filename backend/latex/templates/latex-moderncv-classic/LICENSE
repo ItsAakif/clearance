@@ -1,0 +1,26 @@
+Clearance resume template: latex-moderncv-classic ("LaTeX ModernCV Classic")
+Copyright 2026 Clearance. All rights reserved.
+
+  Template id:      latex-moderncv-classic
+  Template version: 1.0.1
+  Layout:          one column, large name, one contact line, thin rule under
+                   section headings, slightly larger leading
+  Attribution:     Clearance
+
+Clearance template, original implementation. Inspired by ModernCV (LPPL-1.3c),
+but no upstream source is copied: the document compiled at render time is generated
+per resume by backend/src/render/latexExport.ts.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+these files except in compliance with the License. A copy of the License is
+published at http://www.apache.org/licenses/LICENSE-2.0
+
+THIRD-PARTY WORKS THIS TEMPLATE RENDERS WITH. They are separate works under their
+own licences and NONE of them is part of this file:
+
+  Engine  TeX Live 2022 (pdfTeX 3.141592653-2.6-1.40.24)   LPPL-1.3c
+          shipped as the pinned clearance/latex-worker image, built from Debian
+          bookworm's texlive-latex-base and texlive-fonts-recommended packages.
+  Fonts   Computer Modern, shipped with the same TeX Live image.
+  Packages  none. The generated document loads only `fontenc`, `inputenc` and
+          `geometry`, all from texlive-latex-base.

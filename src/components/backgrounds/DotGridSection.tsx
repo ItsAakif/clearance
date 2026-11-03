@@ -13,11 +13,8 @@ export function DotGridSection({
   minHeight = "min-h-[80vh]" 
 }: DotGridSectionProps) {
   return (
-    <section 
-      className={cn("relative overflow-hidden", minHeight, className)}
-      style={{
-        background: `linear-gradient(180deg, hsl(var(--gradient-start)) 0%, hsl(var(--gradient-end)) 100%)`
-      }}
+    <section
+      className={cn("relative overflow-hidden bg-paper", minHeight, className)}
     >
       <InteractiveDotGrid />
       <div className="relative z-10">

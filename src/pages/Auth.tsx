@@ -5,7 +5,6 @@ import { Lock, Eye, EyeOff, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card } from "@/components/ui/card";
 import { DotGridSection } from "@/components/backgrounds";
 import { LandingHeader } from "@/components/layout";
 import { useToast } from "@/hooks/use-toast";
@@ -44,47 +43,50 @@ export default function AuthPage() {
   return (
     <DotGridSection className="min-h-screen">
       <LandingHeader />
-      <main className="container mx-auto max-w-sm px-4 pb-16 pt-24">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          <Card className="p-6">
-            <h1 className="text-xl font-semibold text-center mb-2">Enter Application Password</h1>
-            <p className="text-sm text-muted-foreground text-center mb-6">
-              Enter the password configured by the instance administrator.
-            </p>
+      <main className="mx-auto w-full max-w-sm px-4 pb-16 pt-24">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
+          <h1 className="page-title text-ink">Enter application password</h1>
+          <p className="mt-1 text-sm text-ink-3">
+            The password configured by the instance administrator.
+          </p>
+          <div className="mt-4 border-t border-rule" />
 
-            <div className="mb-4 rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-xs text-yellow-800 flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-              <span>Your instance is using the default password. Change it before exposing the application to a network.</span>
-            </div>
+          <p className="mt-4 flex items-start gap-2 text-xs2 text-ink-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-ink-3" aria-hidden="true" />
+            <span>
+              Default password: CHANGEME. Set APP_PASSWORD and restart before exposing this
+              instance to a network.
+            </span>
+          </p>
 
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter password"
-                    className="pl-10 pr-10"
-                    autoFocus
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
+          <form onSubmit={handleLogin} className="mt-6 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" aria-hidden="true" />
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter password"
+                  className="pl-10 pr-10"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 hover:text-ink"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Logging in..." : "Enter"}
-              </Button>
-            </form>
-          </Card>
+            </div>
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? "Logging in..." : "Enter"}
+            </Button>
+          </form>
         </motion.div>
       </main>
     </DotGridSection>

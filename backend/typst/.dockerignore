@@ -1,0 +1,15 @@
+# The build context is ./backend/typst. Only the Dockerfile is needed to build the
+# image, so everything else is excluded: the vendored payloads are ~57 MB of binaries
+# that arrive as read-only bind mounts at runtime (policy 4.5), not as image content.
+#
+# NOTE: these are the VENDORED PAYLOADS and the spike harness, not the tracked
+# fixture sources. `fixtures/` is deliberately excluded too: the fixtures are
+# staged into /work at RUN time by the broker, never baked into the image, so that a
+# compile can only ever see files the stager put there this job.
+toolchain/
+fonts/
+packages/
+fixtures/
+spike/
+*.md
+!Dockerfile

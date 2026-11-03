@@ -1,0 +1,27 @@
+Clearance resume template: latex-awesome-sans ("LaTeX Awesome Sans")
+Copyright 2026 Clearance. All rights reserved.
+
+  Template id:      latex-awesome-sans
+  Template version: 1.0.0
+  Layout:          one column, sans-serif (helvet), letter-spaced section headings
+                   with a rule, dates right-aligned in a two-column header line
+  Attribution:     Clearance
+
+Clearance template, original implementation. Inspired by Awesome-CV (LPPL-1.3c),
+but no upstream source is copied: the document compiled at render time is generated
+per resume by backend/src/render/latexExport.ts.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+these files except in compliance with the License. A copy of the License is
+published at http://www.apache.org/licenses/LICENSE-2.0
+
+THIRD-PARTY WORKS THIS TEMPLATE RENDERS WITH. They are separate works under their
+own licences and NONE of them is part of this file:
+
+  Engine  TeX Live 2022 (pdfTeX 3.141592653-2.6-1.40.24)   LPPL-1.3c
+          shipped as the pinned clearance/latex-worker image, built from Debian
+          bookworm's texlive-latex-base and texlive-fonts-recommended packages.
+  Fonts   Helvetica clone (`helvet`) from psnfss, shipped with the same TeX Live
+          image and used through `\usepackage{helvet}`.
+  Packages  none beyond the image. The generated document loads only `fontenc`,
+          `inputenc`, `geometry` and `helvet`, all from the worker image.

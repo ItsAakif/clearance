@@ -1,7 +1,9 @@
 // Resume API service - connected to Clearance backend
 
-import type { Resume, ResumeVariant, PersonalInfo, ExperienceItem, EducationItem, ResumeSection, DynamicResumeData } from "@/types/resume";
-import { apiClient } from "./client";
+// T1110: `DynamicResumeData` is gone from this list - the two `exportDynamic*` methods that
+// were its only use in this file had no callers and were removed with the builder.
+import type { Resume, ResumeVariant, PersonalInfo, ExperienceItem, EducationItem, ResumeSection, Skill } from "@/types/resume";
+import { apiClient, ApiClientError } from "./client";
 
 // Backend response types (may differ slightly from frontend types)
 interface BackendResume {
@@ -17,7 +19,10 @@ interface BackendResume {
   sections?: ResumeSection[];
   templateId?: string;
   templateSettings?: Record<string, unknown>;
-  lastATSScore?: number;
+  /** T1101: `lastATSScore` is no longer declared here at all. The backend still sends it and
+ *  `routes/ats.ts` still writes it as an internal signal, but a client type that does not name a
+ *  member cannot hand it to a component - so the column has no path to a screen, which is
+ *  stronger than remembering not to render it. */
   isArchived?: boolean;
   variants?: BackendVariant[];
 }
@@ -54,7 +59,9 @@ function transformResume(backendResume: BackendResume): Resume {
     templateId: backendResume.templateId,
     templateSettings: backendResume.templateSettings,
     isArchived: backendResume.isArchived,
-    lastATSScore: backendResume.lastATSScore ?? null,
+    // T1101: `lastATSScore` is NOT mapped onto the client type. The column is still written by
+    // `routes/ats.ts` as an internal signal; it is not carried into the browser, so no component
+    // can render it even by accident.
     variants: backendResume.variants?.map((variant) => ({
       id: variant.id,
       resumeId: backendResume.id,
@@ -65,8 +72,16 @@ function transformResume(backendResume: BackendResume): Resume {
   };
 }
 
+// Write payload for create/update/patch. The editor shape (ResumeData) carries
+// skills as plain names (string[]); the stored Resume shape carries Skill[].
+// The wire format is string[] either way and transformToBackend already
+// normalizes both, so the input type admits both. Runtime behaviour unchanged.
+export type ResumeWritePayload = Partial<Omit<Resume, 'skills'>> & {
+  skills?: Skill[] | string[];
+};
+
 // Transform frontend Resume to backend format
-function transformToBackend(resume: Partial<Resume>): Record<string, unknown> {
+function transformToBackend(resume: ResumeWritePayload): Record<string, unknown> {
   const data: Record<string, unknown> = {};
   
   if (resume.name !== undefined) data.name = resume.name;
@@ -106,7 +121,7 @@ export const resumeApi = {
   /**
    * Create a new resume
    */
-  async create(data: Partial<Resume>): Promise<Resume> {
+  async create(data: ResumeWritePayload): Promise<Resume> {
     const backendData = transformToBackend(data);
     const resume = await apiClient.post<BackendResume>('/resumes', backendData);
     return transformResume(resume);
@@ -115,7 +130,7 @@ export const resumeApi = {
   /**
    * Update an existing resume
    */
-  async update(id: string, data: Partial<Resume>): Promise<Resume> {
+  async update(id: string, data: ResumeWritePayload): Promise<Resume> {
     const backendData = transformToBackend(data);
     const resume = await apiClient.put<BackendResume>(`/resumes/${id}`, backendData);
     return transformResume(resume);
@@ -124,7 +139,7 @@ export const resumeApi = {
   /**
    * Partially update an existing resume
    */
-  async patch(id: string, data: Partial<Resume>): Promise<Resume> {
+  async patch(id: string, data: ResumeWritePayload): Promise<Resume> {
     const backendData = transformToBackend(data);
     const resume = await apiClient.patch<BackendResume>(`/resumes/${id}`, backendData);
     return transformResume(resume);
@@ -226,26 +241,13 @@ export const resumeApi = {
     return apiClient.download(`/resumes/${id}/export/docx`);
   },
 
-  /**
-   * Export dynamic form data directly to DOCX (no saved resume required)
-   * Uses the template-based generation with placeholder replacement
-   */
-  async exportDynamicDocx(templateId: string, sections: DynamicResumeData['sections']): Promise<Blob> {
-    return apiClient.downloadPost('/resumes/export/docx-preview', {
-      templateId,
-      sections,
-    });
-  },
-
-  /**
-   * Export dynamic form data directly to PDF (no saved resume required)
-   * Uses HTML-to-PDF generation via Puppeteer
-   */
-  async exportDynamicPdf(sections: DynamicResumeData['sections']): Promise<Blob> {
-    return apiClient.downloadPost('/resumes/export/pdf-preview', {
-      sections,
-    });
-  },
+  // T1110: `exportDynamicDocx` and `exportDynamicPdf` are REMOVED. Their only reason to exist
+  // was to export a `DynamicResumeData` shape straight to the preview endpoints, and the only
+  // caller of either was the deleted builder tree - a repo-wide search for both names returns
+  // zero call sites. They were the last live reference to `DynamicResumeData` in this file, so
+  // removing them is what let `src/types/resume.ts` lose that whole family (A-30/A-33).
+  // The backend endpoints they called are NOT touched: they live in the frozen
+  // `routes/resume.ts` (A-42/A-43), whose retirement is the backend half of the cutover.
 
   /**
    * Export the currently rendered resume preview to PDF.
@@ -268,13 +270,29 @@ export const resumeApi = {
   },
 };
 
-// Raw uploaded files (PDF/DOCX/TXT) - stored for Job Match only, never parsed
-// into builder resumes and never shown in "My Resumes".
+// Raw uploaded files (PDF/DOCX/TXT) - stored as-is, listed in My Resumes >
+// Uploaded and matched raw. Never parsed into builder resumes and never
+// rendered through a builder template.
 export interface UploadedFileSummary {
   id: string;
   fileName: string;
   fileType: string;
   createdAt: string;
+}
+
+async function getUploadedFileBlob(fileId: string): Promise<Blob> {
+  // apiClient.download throws ApiClientError (with statusCode) on 401/403/404.
+  // Do not swallow it: callers surface the status in the preview error state.
+  const blob = await apiClient.download(`/uploaded-files/${fileId}/view`);
+  if (blob.size === 0) {
+    // A 200 with zero bytes would render as a blank iframe; fail loudly so
+    // the preview shows an explicit empty-file message instead.
+    throw new ApiClientError(
+      'The stored file is empty (0 bytes). Re-upload the file.',
+      422
+    );
+  }
+  return blob;
 }
 
 export const uploadedFilesApi = {
@@ -289,5 +307,22 @@ export const uploadedFilesApi = {
   async list(): Promise<UploadedFileSummary[]> {
     const data = await apiClient.get<{ files: UploadedFileSummary[] }>('/uploaded-files');
     return data.files;
+  },
+
+  async getBlob(fileId: string): Promise<Blob> {
+    return getUploadedFileBlob(fileId);
+  },
+
+  // Caller owns URL.revokeObjectURL for the returned blob: URL.
+  async viewUrl(fileId: string): Promise<string> {
+    return URL.createObjectURL(await getUploadedFileBlob(fileId));
+  },
+
+  async download(fileId: string): Promise<Blob> {
+    return apiClient.download(`/uploaded-files/${fileId}`);
+  },
+
+  async getText(fileId: string): Promise<{ text: string; truncated: boolean }> {
+    return apiClient.get<{ text: string; truncated: boolean }>(`/uploaded-files/${fileId}/text`);
   },
 };

@@ -23,6 +23,8 @@ vi.mock('../jobSources/defaultBoards.js', () => ({
 
 const findManyBoardsMock = vi.fn();
 const findUniqueBoardMock = vi.fn();
+const createBoardMock = vi.fn();
+const updateBoardMock = vi.fn();
 const upsertHealthMock = vi.fn();
 const upsertListingMock = vi.fn();
 const findUniqueSearchMock = vi.fn();
@@ -33,9 +35,11 @@ vi.mock('../lib/prisma.js', () => ({
     jobBoard: {
       findMany: (...args: any[]) => findManyBoardsMock(...args),
       findUnique: (...args: any[]) => findUniqueBoardMock(...args),
+      create: (...args: any[]) => createBoardMock(...args),
+      update: (...args: any[]) => updateBoardMock(...args),
     },
     jobSourceHealth: { upsert: (...args: any[]) => upsertHealthMock(...args) },
-    jobListing: { upsert: (...args: any[]) => upsertListingMock(...args) },
+    jobListing: { upsert: (...args: any[]) => upsertListingMock(...args), update: vi.fn().mockResolvedValue({}) },
     savedSearch: { findUnique: (...args: any[]) => findUniqueSearchMock(...args) },
     jobAlert: {
       findUnique: (...args: any[]) => findUniqueAlertMock(...args),
@@ -214,5 +218,192 @@ describe('source-health wiring', () => {
     const res = await request(makeApp(boardsRouter)).get('/board-1/health');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ status: 'unknown', consecutiveFailures: 0, lastResultCount: 0 });
+  });
+});
+
+// Wave 4 (T684, STEP 4): the new sources get JobSourceHealth rows through
+// the EXISTING recordSourceSuccess/recordSourceFailure path - no new health
+// model, no migration. Sites checked (all three build configs with the same
+// `...boardToConfig(b)` spread and call the same `runSource(c)` + health
+// helpers, with no per-type branch):
+//   - routes/jobs.ts /scan + /search (boardToConfig spread + health write)
+//   - routes/saved-searches.ts:111-115 (identical spread + health write)
+//   - routes/job-alerts.ts:134-150 (identical spread + health write)
+// runSource itself is mocked here but the REAL boardToConfig is kept (file
+// header mock strategy), so these tests prove the new board types flow
+// through boardToConfig with no special case and reach the existing health
+// write; runSource routing for the same types is pinned with mocked
+// fetchers in runSource.registry.test.ts.
+describe('wave-4 source health (existing path, no new model)', () => {
+  // One stored board per new type: board-token types carry boardId, the
+  // tier-3 page carries feedUrl (same fields boardToConfig reads).
+  const wave4Boards = [
+    boardRow({ id: 'board-workable', type: 'workable', boardId: 'acme' }),
+    boardRow({ id: 'board-bamboohr', type: 'bamboohr', boardId: 'acme' }),
+    boardRow({ id: 'board-breezyhr', type: 'breezyhr', boardId: 'acme' }),
+    boardRow({ id: 'board-jobvite', type: 'jobvite', boardId: 'acme' }),
+    boardRow({ id: 'board-teamtailor', type: 'teamtailor', boardId: 'acme' }),
+    boardRow({ id: 'board-pinpoint', type: 'pinpoint', boardId: 'acme' }),
+    boardRow({ id: 'board-freshteam', type: 'freshteam', boardId: 'acme' }),
+    boardRow({ id: 'board-career-page', type: 'career-page', boardId: null, feedUrl: 'https://careers.acme.example.test/' }),
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireAuthMock.mockImplementation((req: any, _res: any, next: any) => {
+      req.user = { id: 'user-1', email: 'test@example.com', isAdmin: false };
+      next();
+    });
+    upsertHealthMock.mockResolvedValue({});
+    upsertListingMock.mockImplementation(async ({ create }: any) => ({
+      id: `id-${create.source}-${create.externalId}`,
+      source: create.source,
+      title: create.title,
+      company: create.company,
+      location: create.location,
+      applyUrl: create.applyUrl,
+      sourceUrl: create.sourceUrl,
+      postedAt: null,
+      isActive: true,
+    }));
+    findUniqueSearchMock.mockResolvedValue({ id: 'search-1', userId: 'user-1', query: 'frontend', sources: null });
+    findUniqueAlertMock.mockResolvedValue({ id: 'alert-1', userId: 'user-1', query: 'frontend', sources: null, savedSearchId: null });
+    runSourceMock.mockResolvedValue([{ ...baseJob, source: 'workable', externalId: 'w-1' }]);
+  });
+
+  it('a scan over one board of each new type records a healthy row per board', async () => {
+    findManyBoardsMock.mockResolvedValue(wave4Boards);
+    const res = await request(makeApp(jobsRouter)).get('/scan?query=frontend');
+    expect(res.status).toBe(200);
+    expect(upsertHealthMock).toHaveBeenCalledTimes(wave4Boards.length);
+    const seenIds = upsertHealthMock.mock.calls.map((c) => c[0].where.jobBoardId).sort();
+    expect(seenIds).toEqual(wave4Boards.map((b) => b.id).sort());
+    for (const call of upsertHealthMock.mock.calls) {
+      expect(call[0].create.status).toBe('healthy');
+    }
+  });
+
+  it('new-type boards flow through boardToConfig with no special case (board/feedUrl wired)', async () => {
+    findManyBoardsMock.mockResolvedValue(wave4Boards);
+    await request(makeApp(jobsRouter)).get('/scan?query=frontend');
+    expect(runSourceMock).toHaveBeenCalledTimes(wave4Boards.length);
+    const byType = new Map(runSourceMock.mock.calls.map((c) => [c[0].type, c[0]]));
+    for (const boardType of ['workable', 'bamboohr', 'breezyhr', 'jobvite', 'teamtailor', 'pinpoint', 'freshteam']) {
+      expect(byType.get(boardType), `${boardType}.board`).toMatchObject({ type: boardType, board: 'acme' });
+    }
+    expect(byType.get('career-page')).toMatchObject({
+      type: 'career-page',
+      feedUrl: 'https://careers.acme.example.test/',
+    });
+  });
+
+  it('a failing new-type source records a failed row through the existing path', async () => {
+    findManyBoardsMock.mockResolvedValue([boardRow({ id: 'board-freshteam', type: 'freshteam', boardId: 'acme' })]);
+    runSourceMock.mockRejectedValueOnce(new Error('Fetch failed 500'));
+    const res = await request(makeApp(jobsRouter)).get('/scan?query=frontend');
+    expect(res.status).toBe(200);
+    expect(upsertHealthMock).toHaveBeenCalledTimes(1);
+    expect(upsertHealthMock.mock.calls[0][0].where).toEqual({ jobBoardId: 'board-freshteam' });
+    expect(upsertHealthMock.mock.calls[0][0].create.status).toBe('failed');
+  });
+
+  it('a saved-search run over a new-type board records health', async () => {
+    findManyBoardsMock.mockResolvedValue([boardRow({ id: 'board-workable', type: 'workable', boardId: 'acme' })]);
+    const res = await request(makeApp(savedSearchesRouter)).post('/search-1/run');
+    expect(res.status).toBe(200);
+    expect(upsertHealthMock).toHaveBeenCalledTimes(1);
+    expect(upsertHealthMock.mock.calls[0][0].create.status).toBe('healthy');
+  });
+
+  it('a job-alert run over a new-type board records health', async () => {
+    findUniqueAlertMock.mockResolvedValue({
+      id: 'alert-1', userId: 'user-1', query: 'frontend',
+      sources: ['board-career-page'], savedSearchId: null,
+    });
+    findManyBoardsMock.mockResolvedValue([
+      boardRow({ id: 'board-career-page', type: 'career-page', boardId: null, feedUrl: 'https://careers.acme.example.test/' }),
+    ]);
+    const res = await request(makeApp(jobAlertsRouter)).post('/alert-1/run');
+    expect(res.status).toBe(200);
+    expect(upsertHealthMock).toHaveBeenCalledTimes(1);
+    expect(upsertHealthMock.mock.calls[0][0].create.status).toBe('healthy');
+  });
+});
+
+describe('aggregator provider gate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    createBoardMock.mockImplementation(async ({ data }: any) => ({ id: 'board-new', ...data }));
+    updateBoardMock.mockImplementation(async ({ data }: any) => ({ ...boardRow(), ...data }));
+  });
+
+  it("POST /boards rejects a retired provider with the supported set", async () => {
+    const res = await request(makeApp(boardsRouter))
+      .post('/')
+      .send({ type: 'aggregator', name: 'Old', aggregatorProvider: 'jooble' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Supported:');
+    expect(createBoardMock).not.toHaveBeenCalled();
+  });
+
+  it("POST /boards accepts 'usajobs' and echoes the provider", async () => {
+    const res = await request(makeApp(boardsRouter))
+      .post('/')
+      .send({ type: 'aggregator', name: 'Federal', aggregatorProvider: 'usajobs' });
+    expect(res.status).toBe(201);
+    expect(res.body.aggregatorProvider).toBe('usajobs');
+  });
+
+  it("POST /boards/validate reports a deprecated provider as non-scrapable", async () => {
+    const res = await request(makeApp(boardsRouter))
+      .post('/validate')
+      .send({ type: 'aggregator', name: 'Old', aggregatorProvider: 'careerjet' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ scrapable: false, via: 'aggregator' });
+    expect(res.body.reason).toContain('no longer supported');
+  });
+
+  it("PATCH on a legacy row can deactivate without touching the provider", async () => {
+    findUniqueBoardMock.mockResolvedValueOnce(
+      boardRow({ type: 'aggregator', aggregatorProvider: 'careerjet' }),
+    );
+    const res = await request(makeApp(boardsRouter))
+      .patch('/board-1')
+      .send({ isActive: false });
+    expect(res.status).toBe(200);
+    expect(updateBoardMock).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ isActive: false }) }),
+    );
+  });
+
+  it("PATCH echoing the stored legacy provider succeeds", async () => {
+    findUniqueBoardMock.mockResolvedValueOnce(
+      boardRow({ type: 'aggregator', aggregatorProvider: 'careerjet' }),
+    );
+    const res = await request(makeApp(boardsRouter))
+      .patch('/board-1')
+      .send({ aggregatorProvider: 'careerjet', name: 'Renamed' });
+    expect(res.status).toBe(200);
+  });
+
+  it("PATCH switching to a different retired provider is rejected", async () => {
+    findUniqueBoardMock.mockResolvedValueOnce(
+      boardRow({ type: 'aggregator', aggregatorProvider: 'careerjet' }),
+    );
+    const res = await request(makeApp(boardsRouter))
+      .patch('/board-1')
+      .send({ aggregatorProvider: 'jooble' });
+    expect(res.status).toBe(400);
+    expect(updateBoardMock).not.toHaveBeenCalled();
+  });
+
+  it("apiKeyProviderSchema still accepts retired ids", async () => {
+    const { validateInput, createApiKeySchema } = await import('../shared/validation.js');
+    expect(() =>
+      validateInput(createApiKeySchema, { provider: 'careerjet', apiKey: 'x'.repeat(10) }),
+    ).not.toThrow();
+    expect(() =>
+      validateInput(createApiKeySchema, { provider: 'jooble', apiKey: 'x'.repeat(10) }),
+    ).not.toThrow();
   });
 });

@@ -5,7 +5,7 @@ import request from 'supertest';
 
 const { prismaMocks } = vi.hoisted(() => ({
   prismaMocks: {
-    user: { findFirst: vi.fn(), create: vi.fn() },
+    user: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn() },
     session: { create: vi.fn() },
   },
 }));
@@ -17,7 +17,6 @@ vi.mock('../config/env.js', () => ({
     NODE_ENV: 'test',
     CLEARANCE_ACCESS_PASSWORD: 'test-access-password',
   },
-  getAdminEmails: () => new Set<string>(),
 }));
 
 import authRouter from './auth.js';
@@ -89,5 +88,55 @@ describe('auth login provisioning', () => {
 
     expect(prismaMocks.user.create).toHaveBeenCalledTimes(1);
     expect(second.body.user.id).toBe(first.body.user.id);
+  });
+
+  describe('singleton invariant (ADR-030)', () => {
+    it('fails loudly if more than one User row exists', async () => {
+      // ADR-030 binds "every session is admin" to exactly one User row: with
+      // two identities, "first user wins" would silently mask a split
+      // identity and void the authorization model. The mock below stands in
+      // for the User table; the count assertion fails loudly on any second
+      // row instead of resolving anyone.
+      const table: typeof canonicalUser[] = [];
+      prismaMocks.user.findFirst.mockImplementation(async () => table[0] ?? null);
+      prismaMocks.user.findMany.mockImplementation(async () => table);
+      prismaMocks.user.create.mockImplementation(async ({ data }: any) => {
+        const row = { ...canonicalUser, ...data, id: `user-${table.length + 1}` };
+        table.push(row);
+        return row;
+      });
+      prismaMocks.session.create.mockResolvedValue({});
+
+      const app = makeApp();
+      for (let i = 0; i < 2; i += 1) {
+        const res = await request(app)
+          .post('/login')
+          .set('Content-Type', 'application/json')
+          .send({ password: 'test-access-password' });
+        expect(res.status).toBe(200);
+      }
+
+      const rows = await prismaMocks.user.findMany({ select: { id: true } });
+      expect(rows.length).toBeLessThanOrEqual(1);
+      expect(table).toHaveLength(1);
+    });
+
+    it('keeps first-user-wins while exactly one row exists', async () => {
+      const onlyUser = { ...canonicalUser };
+      prismaMocks.user.findFirst.mockResolvedValue(onlyUser);
+      prismaMocks.user.findMany.mockResolvedValue([onlyUser]);
+      prismaMocks.session.create.mockResolvedValue({});
+
+      const res = await request(makeApp())
+        .post('/login')
+        .set('Content-Type', 'application/json')
+        .send({ password: 'test-access-password' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.user.id).toBe(onlyUser.id);
+      expect(prismaMocks.user.create).not.toHaveBeenCalled();
+      const rows = await prismaMocks.user.findMany({ select: { id: true } });
+      expect(rows).toHaveLength(1);
+    });
   });
 });

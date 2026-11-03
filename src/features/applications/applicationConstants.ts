@@ -1,3 +1,5 @@
+import type { ApplicationStatus } from '@/services/api';
+
 export const FUNNEL_STAGES: ApplicationStatus[] = ['saved', 'tailored', 'applied', 'interview', 'offer'];
 
 export const TERMINAL_STAGES: ApplicationStatus[] = ['rejected', 'withdrawn', 'ghosted'];
@@ -29,13 +31,14 @@ export const STATUS_LABELS: ApplicationStatusLabelMap = {
   ghosted: 'Ghosted',
 };
 
+// Status is a flat dot + word on a neutral surface. These are text colours only.
 export const STATUS_COLORS: ApplicationStatusColorMap = {
-  saved: 'bg-secondary text-secondary-foreground',
-  tailored: 'bg-primary/10 text-primary',
-  applied: 'bg-blue-500/10 text-blue-500',
-  interview: 'bg-amber-500/10 text-amber-500',
-  offer: 'bg-success/10 text-success',
-  rejected: 'bg-destructive/10 text-destructive',
-  withdrawn: 'bg-muted text-muted-foreground',
-  ghosted: 'bg-muted text-muted-foreground',
+  saved: 'text-[hsl(var(--status-draft))]',
+  tailored: 'text-[hsl(var(--status-sent))]',
+  applied: 'text-[hsl(var(--status-sent))]',
+  interview: 'text-[hsl(var(--status-interview))]',
+  offer: 'text-[hsl(var(--status-offer))]',
+  rejected: 'text-[hsl(var(--status-rejected))]',
+  withdrawn: 'text-[hsl(var(--status-draft))]',
+  ghosted: 'text-[hsl(var(--status-draft))]',
 };

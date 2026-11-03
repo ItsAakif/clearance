@@ -1,8 +1,21 @@
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import app from '../app.js';
 
+const { prismaMocks } = vi.hoisted(() => ({
+  prismaMocks: {
+    session: { findUnique: vi.fn(), create: vi.fn(), deleteMany: vi.fn() },
+    user: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+  },
+}));
+
+vi.mock('../lib/prisma.js', () => ({ default: prismaMocks }));
+
 describe('API smoke checks', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prismaMocks.session.findUnique.mockResolvedValue(null);
+  });
   it('returns health status', async () => {
     const response = await request(app).get('/health');
     expect(response.status).toBe(200);
@@ -82,6 +95,29 @@ describe('API smoke checks', () => {
       .set('Content-Type', 'application/json')
       .send({});
 
+    expect(response.status).toBe(401);
+  });
+
+  it('returns isAdmin:true on /api/admin/status with a valid session (ADR-030)', async () => {
+    prismaMocks.session.findUnique.mockResolvedValue({
+      tokenHash: 'mock-hash',
+      user: { id: 'user-1', email: 'local@clearance.invalid' },
+      expiresAt: new Date(Date.now() + 86400000),
+    });
+
+    const response = await request(app)
+      .get('/api/admin/status')
+      .set('Cookie', ['clearance_session=valid-token']);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      email: 'local@clearance.invalid',
+      isAdmin: true,
+    });
+  });
+
+  it('blocks /api/admin/status without a session (admin gate stays enforced)', async () => {
+    const response = await request(app).get('/api/admin/status');
     expect(response.status).toBe(401);
   });
 });

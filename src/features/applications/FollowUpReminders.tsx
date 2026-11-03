@@ -1,4 +1,3 @@
-import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { BellOff } from 'lucide-react';
@@ -20,33 +19,34 @@ export function FollowUpReminders({ apps, onSetReminder }: Props) {
   now.setHours(0, 0, 0, 0);
 
   return (
-    <Card className="p-4">
-      <h4 className="mb-3 text-sm font-medium">Follow-up Reminders</h4>
+    <section className="surface-card p-5">
+      <h4 className="section-title">Follow-up reminders</h4>
+      <div className="mt-2 border-t border-border" />
       {reminders.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No follow-ups scheduled</p>
+        <p className="py-2 text-xs2 text-ink-3">No follow-ups scheduled</p>
       ) : (
-        <div className="space-y-2">
+        <div>
           {reminders.map((app) => {
             const isOverdue = new Date(app.followUpAt!) < now;
             return (
-              <div key={app.id} className={cn('flex items-center justify-between rounded-md border p-2', isOverdue ? 'border-destructive/40 bg-destructive/5' : 'border-border')}>
+              <div key={app.id} className="flex items-center justify-between gap-3 border-b border-rule py-2">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">{app.jobListing?.title} - {app.jobListing?.company}</p>
-                  <p className={cn('text-xs', isOverdue ? 'text-destructive' : 'text-muted-foreground')}>
+                  <p className="truncate text-sm font-medium text-ink">{app.jobListing?.title} - {app.jobListing?.company}</p>
+                  <p className={cn('text-xs2', isOverdue ? 'text-destructive' : 'text-ink-3')}>
                     {isOverdue ? 'Overdue: ' : ''}{format(new Date(app.followUpAt!), 'PP')}
                   </p>
                 </div>
                 <div className="flex items-center gap-1">
                   <Input
                     type="date"
-                    className="h-7 w-32 text-xs"
+                    className="h-7 w-32 text-xs2"
                     defaultValue={app.followUpAt?.slice(0, 10)}
                     onBlur={(e) => {
                       const val = e.target.value;
                       if (val) onSetReminder(app, new Date(`${val}T00:00:00`).toISOString());
                     }}
                   />
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => onSetReminder(app, null)} aria-label="Clear reminder">
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-ink-3" onClick={() => onSetReminder(app, null)} aria-label="Clear reminder">
                     <BellOff className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -55,6 +55,6 @@ export function FollowUpReminders({ apps, onSetReminder }: Props) {
           })}
         </div>
       )}
-    </Card>
+    </section>
   );
 }

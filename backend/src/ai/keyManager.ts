@@ -81,14 +81,21 @@ function getEnvKeys(provider: string): KeyRecord[] {
 }
 
 async function getDatabaseKeys(provider: string, userId?: string): Promise<KeyRecord[]> {
-  const where: Record<string, unknown> = {
-    provider,
-    isActive: true,
-    OR: [{ rateLimitedUntil: null }, { rateLimitedUntil: { lte: new Date() } }],
-  };
-  if (userId) {
-    where.OR = [{ userId }, { userId: null }];
-  }
+  // D2: the rate-limit clause and the user-scope clause must BOTH hold. The
+  // previous code assigned where.OR twice, so a user-scoped lease silently
+  // dropped the rateLimitedUntil filter (rate-limited keys kept serving).
+  const rateLimitOk = { OR: [{ rateLimitedUntil: null }, { rateLimitedUntil: { lte: new Date() } }] };
+  const where: Record<string, unknown> = userId
+    ? {
+        provider,
+        isActive: true,
+        AND: [rateLimitOk, { OR: [{ userId }, { userId: null }] }],
+      }
+    : {
+        provider,
+        isActive: true,
+        ...rateLimitOk,
+      };
 
   const keys = await prisma.aIProviderKey.findMany({
     where,

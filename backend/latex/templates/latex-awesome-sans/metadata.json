@@ -1,0 +1,41 @@
+{
+  "id": "latex-awesome-sans",
+  "version": "1.0.0",
+  "name": "LaTeX Awesome Sans",
+  "category": "professional",
+  "description": "Single column, sans-serif, letter-spaced headings and right-aligned dates - inspired by Awesome-CV.",
+  "engine": "latex",
+  "variant": "awesome-sans",
+  "engineVersionPins": {
+    "latex": "2022"
+  },
+  "pageSize": "a4",
+  "columns": 1,
+  "maxPages": 2,
+  "supportedSections": [
+    "contact",
+    "summary",
+    "experience",
+    "projects",
+    "education",
+    "skills",
+    "certifications"
+  ],
+  "requiredDictKeys": [
+    "contact",
+    "summary",
+    "experience",
+    "education",
+    "skills"
+  ],
+  "fonts": [],
+  "packages": [],
+  "licence": "Apache-2.0",
+  "attribution": "Clearance",
+  "atsProfile": {
+    "singleColumn": true,
+    "tablesAllowed": false,
+    "iconFonts": false
+  },
+  "thumbnail": null
+}

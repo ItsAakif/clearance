@@ -1,143 +1,198 @@
-@import "@fontsource/ibm-plex-sans/400.css";
-@import "@fontsource/ibm-plex-sans/500.css";
-@import "@fontsource/ibm-plex-sans/600.css";
-@import "@fontsource/ibm-plex-sans/700.css";
+@import "@fontsource/plus-jakarta-sans/400.css";
+@import "@fontsource/plus-jakarta-sans/500.css";
+@import "@fontsource/plus-jakarta-sans/600.css";
+@import "@fontsource/plus-jakarta-sans/700.css";
+@import "@fontsource/lora/400.css";
+@import "@fontsource/lora/500.css";
+@import "@fontsource/lora/600.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
+/* Self-hosted display serif kept for the PDF pipeline. The TTF files are
+   vendored under backend/typst/fonts and copied into public/fonts with their
+   OFL licence; the UI itself now uses Lora. */
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/fonts/SourceSerif4-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/fonts/SourceSerif4-Semibold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Clearance Design System
-   Warm, neutral, trustworthy
-   Human-made, editorial quality
-   Brighter, more vibrant palette
-*/
+/* Clearance design system
+   Modern, soft, card-based. Warm orange accent on near-white paper.
+   One accent, white card surfaces, soft elevation, generous radii. */
 
 @layer base {
   :root {
-    /* Blue-centric palette with grey neutrals */
-    --background: 0 0% 99%; /* Emptiness #FCFCFC */
-    --foreground: 210 15% 25%; /* Dark blue-grey for text */
-
+    /* Paper and ink */
+    --paper: 0 0% 99.2157%;
+    --paper-2: 0 0% 96.0784%;
     --card: 0 0% 100%;
-    --card-foreground: 210 15% 25%;
+    --ink: 0 0% 0%;
+    --ink-2: 0 0% 20%;
+    --ink-3: 0 0% 32.1569%;
+    --rule: 240 17.0732% 91.9608%;
+    --rule-strong: 240 10% 85%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 210 15% 25%;
+    --background: 0 0% 99.2157%;
+    --foreground: 0 0% 0%;
 
-    /* Primary - Blue Nebula #1297FD */
-    --primary: 209 98% 53%;
+    /* Landing texture: a flat paper field with one dot grid. No wash. */
+    --dot-color: 15.3913 90.5512% 44%;
+    --dot-opacity: 0.10;
+    --dot-hover-opacity: 0.26;
+
+    --card-foreground: 0 0% 0%;
+    --popover: 0 0% 98.8235%;
+    --popover-foreground: 0 0% 0%;
+
+    /* The single accent: warm orange. `--primary` is the owner's exact brand
+       orange verbatim; `--accent-hi` is the readable orange reserved for text
+       (links, status copy) so solid fills and small text do different jobs. */
+    --accent: 15 100% 96.0784%;
+    --accent-hi: 14.9239 94.2584% 40.9804%;
+    --accent-soft: 15 100% 96.0784%;
+    --accent-foreground: 14.9239 94.2584% 40.9804%;
+    --accent-emphasis: 14.9239 94.2584% 40.9804%;
+    --accent-light: 15 100% 96.0784%;
+    --accent-medium: 15.3913 90.5512% 49.8039%;
+    --accent-dark: 14.9239 94.2584% 40.9804%;
+    --accent-grey: 0 0% 32.1569%;
+
+    --primary: 15.3913 90.5512% 49.8039%;
     --primary-foreground: 0 0% 100%;
 
-    /* Secondary - Windswept Beach #E3E4E6 */
-    --secondary: 220 5% 90%;
-    --secondary-foreground: 210 15% 25%;
+    --secondary: 214.2857 24.1379% 94.3137%;
+    --secondary-foreground: 0 0% 3.1373%;
 
-    /* Muted - Explosive Grey #C3C3C5 */
-    --muted: 240 2% 90%;
-    --muted-foreground: 240 2% 45%;
+    --muted: 0 0% 96.0784%;
+    --muted-foreground: 0 0% 32.1569%;
 
-    /* Accent - Adamantine Blue #40AAF8 */
-    --accent: 207 93% 61%;
-    --accent-foreground: 0 0% 100%;
-    --accent-emphasis: 209 98% 53%;
-    
-    /* Accent variants using new palette */
-    --accent-light: 210 89% 76%; /* Drift on the Sea #8BCAF9 */
-    --accent-medium: 207 93% 61%; /* Adamantine Blue #40AAF8 */
-    --accent-dark: 209 98% 53%; /* Blue Nebula #1297FD */
-    --accent-grey: 240 2% 77%; /* Explosive Grey #C3C3C5 */
-
-    --destructive: 0 72% 51%;
+    --destructive: 358.4416 74.7573% 52%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Success/Warning */
-    --success: 142 71% 45%;
+    --success: 152 50% 32%;
     --success-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;
+    --warning: 14.9239 94.2584% 40.9804%;
     --warning-foreground: 0 0% 100%;
 
-    --border: 220 5% 90%;
-    --input: 220 5% 90%;
-    --ring: 209 98% 53%;
+    --border: 240 17.0732% 91.9608%;
+    --input: 0 0% 92.1569%;
+    --ring: 15.3913 90.5512% 44%;
 
-    --radius: 0.75rem;
+    /* Status tokens: semantic text colours. */
+    --status-draft: 0 0% 32.1569%;
+    --status-sent: 15.3913 90.5512% 44%;
+    --status-screening: 217 77% 52%;
+    --status-interview: 259 50% 50%;
+    --status-offer: 32 90% 36%;
+    --status-rejected: 358.4416 74.7573% 52%;
+    --status-confirmed: 0 0% 0%;
+    --status-inferred: 0 0% 32.1569%;
 
-    /* Sidebar */
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 210 15% 25%;
-    --sidebar-primary: 209 98% 53%;
+    /* Elevation: e1 cards, e2 raised, e3 overlays. */
+    --shadow-e1: 0 1px 3px rgba(0, 0, 0, 0.06);
+    --shadow-e2: 0 1px 3px rgba(0, 0, 0, 0.10), 0 4px 8px -4px rgba(0, 0, 0, 0.10);
+    --shadow-e3: 0 12px 32px -12px rgba(0, 0, 0, 0.18);
+
+    /* Radius scale: cards 22px, controls 18px, chips/pills fully round. */
+    --radius-card: 22px;
+    --radius-control: 18px;
+    --radius-chip: 9999px;
+
+    /* Sidebar: same tone as the page, never the blue-tinted theme rail. */
+    --sidebar-background: 0 0% 99.2157%;
+    --sidebar-foreground: 0 0% 0%;
+    --sidebar-primary: 15.3913 90.5512% 44%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 210 89% 76%;
-    --sidebar-accent-foreground: 209 98% 35%;
-    --sidebar-border: 220 5% 90%;
-    --sidebar-ring: 209 98% 53%;
-
-    /* Dot grid colors */
-    --dot-color: 209 98% 53%;
-    --dot-opacity: 0.12;
-    --dot-hover-opacity: 0.35;
-
-    /* Gradient for hero */
-    --gradient-start: 210 89% 92%;
-    --gradient-end: 0 0% 99%;
+    --sidebar-accent: 16.1538 100% 94.9020%;
+    --sidebar-accent-foreground: 0 0% 0%;
+    --sidebar-border: 240 17.0732% 91.9608%;
+    --sidebar-ring: 15.3913 90.5512% 44%;
   }
 
   .dark {
-    --background: 215 20% 10%;
-    --foreground: 210 20% 92%;
+    --paper: 0 0% 3.9216%;
+    --paper-2: 240 2.7778% 14.1176%;
+    --card: 0 0% 7.0588%;
+    --ink: 0 0% 94.1176%;
+    --ink-2: 0 0% 78%;
+    --ink-3: 0 0% 58.8235%;
+    --rule: 0 0% 12.1569%;
+    --rule-strong: 0 0% 18%;
 
-    --card: 215 18% 13%;
-    --card-foreground: 210 20% 92%;
+    --background: 0 0% 3.9216%;
+    --foreground: 0 0% 94.1176%;
 
-    --popover: 215 18% 13%;
-    --popover-foreground: 210 20% 92%;
+    --dot-color: 15.3913 90.5512% 55%;
+    --dot-opacity: 0.12;
+    --dot-hover-opacity: 0.45;
 
-    --primary: 209 98% 58%;
-    --primary-foreground: 215 20% 10%;
+    --card-foreground: 0 0% 94.1176%;
+    --popover: 240 1.9608% 10%;
+    --popover-foreground: 0 0% 94.1176%;
 
-    --secondary: 215 15% 20%;
-    --secondary-foreground: 210 20% 92%;
+    --accent: 14.7368 96.6102% 23.1373%;
+    --accent-hi: 15.3913 90.5512% 55%;
+    --accent-soft: 14.7368 96.6102% 23.1373%;
+    --accent-foreground: 0 0% 99.6078%;
+    --accent-emphasis: 15.3913 90.5512% 55%;
+    --accent-light: 14.7368 96.6102% 23.1373%;
+    --accent-medium: 15.3913 90.5512% 49.8039%;
+    --accent-dark: 15.3913 90.5512% 55%;
+    --accent-grey: 0 0% 58.8235%;
 
-    --muted: 215 15% 18%;
-    --muted-foreground: 210 10% 55%;
+    --primary: 15.3913 90.5512% 49.8039%;
+    --primary-foreground: 0 0% 100%;
 
-    --accent: 207 85% 50%;
-    --accent-foreground: 0 0% 100%;
-    --accent-emphasis: 209 98% 58%;
-    
-    --accent-light: 210 70% 45%;
-    --accent-medium: 207 85% 50%;
-    --accent-dark: 209 98% 58%;
-    --accent-grey: 215 10% 35%;
+    --secondary: 14.7692 90.6977% 42.1569%;
+    --secondary-foreground: 0 0% 94.1176%;
 
-    --destructive: 0 62% 50%;
-    --destructive-foreground: 0 0% 100%;
+    --muted: 240 2.7778% 14.1176%;
+    --muted-foreground: 0 0% 58.8235%;
 
-    --success: 142 60% 45%;
-    --success-foreground: 0 0% 100%;
-    --warning: 38 80% 50%;
-    --warning-foreground: 215 20% 10%;
+    --destructive: 0 94.7712% 70%;
+    --destructive-foreground: 0 0% 3.9216%;
 
-    --border: 215 15% 22%;
-    --input: 215 15% 22%;
-    --ring: 209 98% 58%;
+    --success: 152 45% 62%;
+    --success-foreground: 0 0% 3.9216%;
+    --warning: 15.3913 90.5512% 55%;
+    --warning-foreground: 0 0% 3.9216%;
 
-    --sidebar-background: 215 18% 13%;
-    --sidebar-foreground: 210 20% 92%;
-    --sidebar-primary: 209 98% 58%;
-    --sidebar-primary-foreground: 215 20% 10%;
-    --sidebar-accent: 215 15% 20%;
-    --sidebar-accent-foreground: 210 20% 92%;
-    --sidebar-border: 215 15% 22%;
-    --sidebar-ring: 209 98% 58%;
+    --border: 0 0% 12.1569%;
+    --input: 0 0% 23.1373%;
+    --ring: 15.3913 90.5512% 44%;
 
-    --dot-color: 209 98% 58%;
-    --dot-opacity: 0.08;
-    --dot-hover-opacity: 0.25;
+    --status-draft: 0 0% 58.8235%;
+    --status-sent: 15.3913 90.5512% 55%;
+    --status-screening: 217 77% 65%;
+    --status-interview: 259 60% 70%;
+    --status-offer: 32 90% 60%;
+    --status-rejected: 0 94.7712% 70%;
+    --status-confirmed: 0 0% 94.1176%;
+    --status-inferred: 0 0% 58.8235%;
 
-    --gradient-start: 215 18% 15%;
-    --gradient-end: 215 20% 10%;
+    --sidebar-background: 0 0% 3.9216%;
+    --sidebar-foreground: 0 0% 94.1176%;
+    --sidebar-primary: 15.3913 90.5512% 44%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 15.4839 93.9394% 12.9412%;
+    --sidebar-accent-foreground: 0 0% 94.1176%;
+    --sidebar-border: 0 0% 12.1569%;
+    --sidebar-ring: 15.3913 90.5512% 44%;
   }
 }
 
@@ -147,11 +202,64 @@
   }
 
   html {
-    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
   }
 
   body {
     @apply bg-background text-foreground antialiased;
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+    font-size: 0.875rem;
+    line-height: 1.55;
+    letter-spacing: normal;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  h1 {
+    font-size: 1.875rem;
+    line-height: 1.15;
+  }
+
+  ::selection {
+    background: hsl(var(--accent));
+    color: hsl(var(--ink));
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* The default grouping on app pages: a white surface with a hairline and a
+     soft shadow. Cards are the grammar; hairlines are only for row dividers. */
+  .surface-card {
+    @apply border border-border bg-card text-card-foreground shadow-e1;
+    border-radius: var(--radius-card);
+  }
+
+  .surface-hover {
+    transition: background-color 150ms ease-out, box-shadow 150ms ease-out, border-color 150ms ease-out;
+  }
+
+  .surface-hover:hover {
+    @apply border-rule-strong bg-paper-2 shadow-e2;
+  }
+
+  /* Section heading inside a card: 15px semibold ink, not a hairline label. */
+  .section-title {
+    font-size: 15px;
+    line-height: 1.35;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: hsl(var(--ink));
   }
 }
 
@@ -159,85 +267,77 @@
   .text-balance {
     text-wrap: balance;
   }
+
+  .font-display {
+    font-family: "Lora", ui-serif, Georgia, serif;
+  }
+
+  .page-title {
+    font-family: "Lora", ui-serif, Georgia, serif;
+    font-weight: 500;
+    font-size: 30px;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+  }
+
+  /* Sentence-case section label kept for small meta and table headers only. */
+  .section-label {
+    font-size: 11px;
+    line-height: 1.45;
+    font-weight: 600;
+    color: hsl(var(--ink-3));
+    letter-spacing: 0.04em;
+    text-transform: none;
+  }
+
+  /* Data numerals: tabular lining figures, never oldstyle. */
+  .num {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  /* The one display anchor a data page may have: a 44px serif figure. */
+  .display-number {
+    font-family: "Lora", ui-serif, Georgia, serif;
+    font-weight: 500;
+    font-size: 44px;
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+  }
 }
 
-/* Animation utilities */
-@layer components {
-  .btn-hover {
-    @apply transition-all duration-200 ease-out;
-  }
-  
-  .btn-hover:hover {
-    @apply shadow-md;
-  }
-  
-  .btn-hover:active {
-    @apply scale-[0.98];
-  }
-  
-  .card-hover {
-    @apply transition-all duration-200 ease-out;
-  }
-  
-  .card-hover:hover {
-    @apply shadow-xl -translate-y-1;
-  }
-  
-  .tab-underline {
-    @apply relative after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full after:scale-x-0 after:bg-primary after:transition-transform after:duration-200 after:ease-out;
-  }
-  
-  .tab-underline[data-state="active"]::after,
-  .tab-underline:hover::after {
-    @apply scale-x-100;
+/* Print isolation ... */
+@media print {
+  @page {
+    size: Letter;
+    margin: 0;
   }
 
-  /* Animated gradient background */
-  .gradient-bg {
-    background: linear-gradient(
-      135deg,
-      hsl(var(--accent-dark)) 0%,
-      hsl(var(--accent-medium)) 35%,
-      hsl(var(--accent-light)) 65%,
-      hsl(var(--secondary)) 100%
-    );
-    background-size: 400% 400%;
-    animation: gradient-shift 15s ease infinite;
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
   }
 
-  @keyframes gradient-shift {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
+  body * {
+    visibility: hidden;
   }
 
-  /* Shimmer effect */
-  .shimmer {
-    background: linear-gradient(
-      90deg,
-      transparent,
-      hsl(var(--foreground) / 0.08),
-      transparent
-    );
-    background-size: 200% 100%;
-    animation: shimmer 2s infinite;
+  [data-print-root],
+  [data-print-root] * {
+    visibility: visible;
   }
 
-  @keyframes shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-  }
-
-  /* Pulse glow */
-  .pulse-glow {
-    animation: pulse-glow 2s ease-in-out infinite;
-  }
-
-  @keyframes pulse-glow {
-    0%, 100% { 
-      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.4);
-    }
-    50% { 
-      box-shadow: 0 0 20px 10px hsl(var(--primary) / 0.1);
-    }
+  [data-print-root] {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    transform: none !important;
+    box-shadow: none !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 }

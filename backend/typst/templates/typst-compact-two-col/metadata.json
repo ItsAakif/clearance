@@ -1,0 +1,49 @@
+{
+  "id": "typst-compact-two-col",
+  "version": "1.0.1",
+  "name": "Compact Two Column",
+  "category": "compact",
+  "engine": "typst",
+  "engineVersionPins": {
+    "typst": "0.15.1"
+  },
+  "pageSize": "a4",
+  "columns": 2,
+  "maxPages": 2,
+  "supportedSections": [
+    "contact",
+    "summary",
+    "experience",
+    "projects",
+    "education",
+    "skills",
+    "certifications"
+  ],
+  "requiredDictKeys": [
+    "contact",
+    "summary",
+    "experience",
+    "education",
+    "skills"
+  ],
+  "fonts": [
+    {
+      "family": "Source Serif 4",
+      "files": [
+        "SourceSerif4-Regular.ttf",
+        "SourceSerif4-Semibold.ttf",
+        "SourceSerif4-Bold.ttf"
+      ],
+      "licence": "OFL-1.1"
+    }
+  ],
+  "packages": [],
+  "licence": "Apache-2.0",
+  "attribution": "Clearance",
+  "atsProfile": {
+    "singleColumn": false,
+    "tablesAllowed": false,
+    "iconFonts": false
+  },
+  "thumbnail": null
+}

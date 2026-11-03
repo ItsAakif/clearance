@@ -1,0 +1,42 @@
+# T1005 - what is vendored and what is tracked.
+#
+# The vendored BINARY payloads are downloaded and digest-verified by fetch-assets.sh.
+# They are deliberately NOT committed: `typst` is 55.7 MB, the fonts are 0.8 MB, and
+# a 55 MB binary in git is both unreviewable and unreproducible-by-inspection. Their
+# integrity is guaranteed by the recorded SHA-256 values in LICENSES.md, which
+# fetch-assets.sh enforces on every fetch, and by the container-side digest
+# self-check the spike runs.
+#
+# This is also what keeps policy 10.1.5 / assertion V21 satisfiable: the vendored
+# payloads are read-only binds, so `git status --porcelain backend/typst` stays empty
+# across any number of render runs, and there is nothing in the repo a compile could
+# write to.
+
+# Pinned typst toolchain (fetch-assets.sh -> backend/typst/toolchain/).
+# PIN and PIN.sha256 are NOT ignored: they are 96 bytes of text recording the pinned
+# version and the binary digest, they are what makes the pin reviewable in a diff rather
+# than only on the machine that ran the fetch, and they are the cheapest possible tripwire
+# if the vendored binary is ever replaced. Everything else here is the upstream payload.
+/toolchain/*
+!/toolchain/.gitkeep
+!/toolchain/PIN
+!/toolchain/PIN.sha256
+
+# Upstream release archives staged by fetch-assets.sh so the image build is hermetic
+# (no egress at build time). Digest-pinned in LICENSES.md; never trusted unverified.
+# The RECEIPT is 670 bytes of text listing every digest that was verified, so it IS
+# tracked: it is the record of what the fetch actually checked, and it is diffable.
+# The archives themselves (35 MB) are not.
+/typst-dist/*
+!/typst-dist/.gitkeep
+!/typst-dist/RECEIPT
+
+# Vendored, licence-recorded font set (fetch-assets.sh -> backend/typst/fonts/)
+/fonts/*
+!/fonts/.gitkeep
+
+# Third-party Typst Universe packages, IF any are ever added. The spike vendors none;
+# packages/clearance/ is first-party and tracked, because it is a few lines of
+# reviewable source rather than a third-party payload.
+/packages/preview/
+/packages/thirdparty/

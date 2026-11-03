@@ -1,31 +1,451 @@
-# Clearance - one-command stack: Node backend (no Python sidecar).
+# Clearance - one-command stack: Postgres + Node backend + Vite frontend.
 #
 # Usage:
+#   cp .env.example .env   # then set CLEARANCE_ACCESS_PASSWORD
 #   docker compose up --build
+#
+# That brings up db (healthy) -> backend (migrations applied, :3001) ->
+# frontend (built static bundle, :8080). Open http://localhost:8080.
 #
 # All job scraping runs in the Node backend via user-supplied backends (BYOK):
 #   - Firecrawl / Crawl4AI (self-hostable): medium boards (YC, Wellfound, Instahyre, Sprout, Google)
 #   - RapidAPI (JSearch + PullAPI): hard boards (LinkedIn, Indeed, ZipRecruiter, Glassdoor, Bayt, Naukri)
 # Add each backend's key (and self-host URL) in the app Settings page.
 #
-# Secrets: copy backend/.env before up.
+# Secrets: copy the ROOT .env before up (./backend/.env is gitignored and NOT used).
+#
+# ADR-029 decision 6 choice: (a) slim app image. The browser tier is an
+# optional full-image path (wave 6, T724) and stays out of the default image.
 
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-clearance}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # Host-only access for maintenance (scripts/import-company-registry.ts,
+      # ad-hoc psql). Port 5543 avoids colliding with the dev embedded Postgres
+      # on 5433. The app itself still reaches the DB over the compose network.
+      - "5543:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      # Wave 6 (T724, ADR-029 N17): optional full-image path. The default
+      # stays SLIM (WITH_BROWSER=false): no browser in the image, so
+      # `docker compose up --build` works with the tier absent (deep search
+      # reports it skipped-with-reason, never failed). Opt in:
+      #   WITH_BROWSER=true docker compose up --build
+      # (or set WITH_BROWSER=true in the root .env). See backend/Dockerfile.
+      args:
+        WITH_BROWSER: ${WITH_BROWSER:-false}
     ports:
       - "3001:3001"
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
       PORT: 3001
-      DATABASE_URL: ${DATABASE_URL}
-      JWT_SECRET: ${JWT_SECRET}
-      CLIENT_URL: ${CLIENT_URL}
-      # Self-host registration: false = first signup becomes admin, then locked.
-      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
-      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
-      # Optional env search keys (DB-stored BYOK keys also work)
+      NODE_ENV: ${NODE_ENV:-production}
+      # Default points at the compose `db` service; override in root .env for hosted DBs.
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@db:5432/clearance?schema=public}
+      # Default matches the Vite dev origin (vite.config.ts -> 8080).
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:8080}
+      # The real required secret (backend/src/config/env.ts). Defaults to the
+      # placeholder so `config`/`build` validate on a clean clone; the backend
+      # itself refuses to boot in production until this is changed
+      # (assertRequiredRuntimeConfig).
+      CLEARANCE_ACCESS_PASSWORD: ${CLEARANCE_ACCESS_PASSWORD:-CHANGEME}
+      KEY_ENCRYPTION_SECRET: ${KEY_ENCRYPTION_SECRET:-}
+      # Daily catalogue feed for POST /catalogue/sync. Override in the root
+      # .env to point at a locally served snapshot in development.
+      CATALOGUE_FEED_URL: ${CATALOGUE_FEED_URL:-https://github.com/ItsAakif/clearance/releases/latest/download/catalogue.jsonl.gz}
+      # Optional env search keys (DB-stored BYOK keys also work; see keyManager.ts)
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
       EXA_API_KEY: ${EXA_API_KEY:-}
+      # Wave 6 (T724, ADR-029): browser-tier flags. Defaults keep the slim
+      # behavior (tier disabled, skipped-with-reason). CAMOUFOX_WS_ENDPOINT
+      # is intentionally NOT listed here: an empty default would fail env
+      # validation (it must be a URL when set); set it in the root .env
+      # (loaded via env_file below) for the remote-endpoint shape
+      # (CAMOUFOX_WS_ENDPOINT=ws://<browser-host>:<port>).
+      CAMOUFOX_ENABLED: ${CAMOUFOX_ENABLED:-false}
+      CAMOUFOX_NAV_TIMEOUT_MS: ${CAMOUFOX_NAV_TIMEOUT_MS:-30000}
+      CAMOUFOX_MAX_CONCURRENCY: ${CAMOUFOX_MAX_CONCURRENCY:-2}
+      CAMOUFOX_MAX_URLS_PER_RUN: ${CAMOUFOX_MAX_URLS_PER_RUN:-20}
+      CAMOUFOX_MAX_QUEUE_DEPTH: ${CAMOUFOX_MAX_QUEUE_DEPTH:-50}
+      # T1031: the broker's transport, and T1032's storage root. The socket is a unix socket
+      # on a directory volume shared with the render-broker service (ADR-044 D1); the
+      # artifacts path is the storage port's root, mounted rw on THIS SERVICE ONLY - policy
+      # 4.5's bind allowlist is exactly three entries and none of them is this, so a render
+      # that succeeded inside the sandbox cannot have written to storage.
+      RENDER_BROKER_SOCKET: /run/clearance-render/broker.sock
+      RENDER_BROKER_TOKEN: ${RENDER_BROKER_TOKEN:-}
+      # HTTP per-user render budget (backend/src/render/sandbox.ts). The broker keeps its own
+      # admission limits (concurrency/queue), so this only widens the HTTP budget for a Studio
+      # page that renders on mount plus document/template arrivals.
+      RENDER_PER_USER_PER_MINUTE: ${RENDER_PER_USER_PER_MINUTE:-60}
+      RENDER_STORAGE_ROOT: /var/lib/clearance/artifacts
+    volumes:
+      - type: volume
+        source: render-broker-socket
+        target: /run/clearance-render
+      - type: volume
+        source: render-artifacts
+        target: /var/lib/clearance/artifacts
     env_file:
-      - ./backend/.env
+      - path: .env
+        required: false
+    # Apply the schema BEFORE serving traffic with `prisma migrate deploy`.
+    # T1004 / ADR-041 D1: the historic migration chain was never deployable -
+    # its first migration (20250101000000_add_job_source_health) FK-references
+    # "JobBoard" without any migration creating that table, so `migrate deploy`
+    # failed with P3018 / 42P01 on a fresh volume and the backend compensated
+    # with `db push`. That chain has been replaced by a single squashed
+    # baseline (backend/prisma/migrations/20260930000000_baseline) generated
+    # from the CURRENT schema.prisma, so a fresh volume now deploys cleanly and
+    # every future V2 migration is a real, reviewable forward step.
+    # EXISTING volumes: adopt the baseline once with
+    #   npx prisma migrate resolve --applied 20260930000000_baseline
+    # (from backend/ against your database) BEFORE the first `up` on this
+    # image, otherwise deploy will try to re-create existing tables. See
+    # .planning/specs/clearance-v2/migration-baseline-runbook.md.
+    command: ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
     restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # typst-worker - the render worker (T1005 spike; production broker is T1040).
+  #
+  # This service is NOT started by `docker compose up`. It is a one-shot job runner:
+  # one container per compile, created, run once, destroyed. There is no daemon, no
+  # warm pool and no `typst watch` session, so it has no `restart` policy, no health
+  # check and no dependency on anything. Bring it up only to render a single job:
+  #
+  #   docker compose build typst-worker
+  #   docker compose run --rm typst-worker --version
+  #
+  # NORMATIVE DOC: .planning/specs/clearance-v2/render-sandbox-policy.md sections 4, 5
+  # and 7. Machine-readable policy: backend/src/render/sandbox.ts
+  #
+  # The keys below are asserted against REQUIRED_COMPOSE_KEYS / REQUIRED_TMPFS in
+  # backend/src/render/sandbox.ts, not just written here for the reader.
+  # ---------------------------------------------------------------------------
+  typst-worker:
+    build:
+      context: ./backend/typst
+      dockerfile: Dockerfile
+    # Exact tag, never `latest`: a render is cached on (engineVersion, pins, dataHash)
+    # (policy 10.4), so the image identity is part of the correctness story.
+    image: clearance/typst-worker:0.15.1
+    # No depends_on, on purpose. The worker must not be able to reach db, backend, or
+    # the internet - not even over the default compose network, which it is not on.
+    network_mode: "none"
+    # Cannot write to its own root filesystem, so the toolchain, the vendored package
+    # tree and the vendored fonts cannot be rewritten by the thing running under them
+    # (policy 7.5).
+    read_only: true
+    ipc: "none"
+    # uid/gid 65532:65532. Also set as `USER` in the Dockerfile, so the guarantee
+    # survives `docker run` with no --user flag (policy 4.2).
+    user: "65532:65532"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    privileged: false
+    # Resource caps (policy 4.6). memswap_limit == mem_limit, so there is NO swap
+    # escape: a memory-cap breach is an OOM kill, not unbounded host paging.
+    pids_limit: 64
+    mem_limit: 1073741824
+    memswap_limit: 1073741824
+    cpus: 1.0
+    oom_kill_disable: false
+    # Section 9.3 kill budget: 10 s wall clock, 2 s to SIGTERM->SIGKILL, 5 s compose
+    # backstop.
+    stop_grace_period: 5s
+    restart: "no"
+    stdin_open: false
+    tty: false
+    # Writable locations are tmpfs ONLY (policy 4.4): nothing a compile writes reaches
+    # the host filesystem, so there is nothing to clean up after a crash and a
+    # container cannot fill the host disk. /work and /out are separate so that "what
+    # the engine produced" is distinguishable from "what the engine was allowed to
+    # see", which is what makes the single-artifact check mechanical.
+    tmpfs:
+      - /work:rw,nosuid,nodev,noexec,size=32m,mode=0700,uid=65532,gid=65532
+      - /out:rw,nosuid,nodev,noexec,size=16m,mode=0700,uid=65532,gid=65532
+      - /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777
+    # The COMPLETE bind allowlist (policy 4.5). Exactly three, all inside this repo,
+    # all read-only via the LONG syntax with an explicit `read_only: true`. A short
+    # `- ./backend/typst/toolchain:/opt/typst` line without `:ro` is a review failure.
+    # There is deliberately no docker socket, no /etc, no /proc, no host path and no
+    # pgdata here: a mounted docker socket would turn a Typst RCE into host takeover.
+    #
+    # These directories are populated by backend/typst/fetch-assets.sh, which verifies
+    # every SHA-256 recorded in backend/typst/LICENSES.md. They are gitignored: a
+    # 55 MB binary does not belong in git, and its integrity comes from the recorded
+    # digest plus the in-container digest self-check, not from a commit.
+    volumes:
+      - type: bind
+        source: ./backend/typst/toolchain
+        target: /opt/typst
+        read_only: true
+      - type: bind
+        source: ./backend/typst/packages
+        target: /opt/typst-packages
+        read_only: true
+      - type: bind
+        source: ./backend/typst/fonts
+        target: /opt/typst-fonts
+        read_only: true
+    environment:
+      # argv is authoritative for --root; these env locks exist so that a bug which
+      # DROPS a flag still cannot WIDEN the sandbox. Two sources, same value.
+      # MEASURED (T1005): both locks are live. `TYPST_ROOT=/` alongside an explicit
+      # `--root /work` does NOT widen the root - argv wins - and with no `--root` in
+      # argv the env lock confines typst to /work on its own. A nonexistent
+      # TYPST_ROOT fails closed ("root directory not found").
+      TYPST_ROOT: /work
+      TYPST_PACKAGE_PATH: /opt/typst-packages
+      # Redirect the package cache onto the tmpfs: an unvendored import then fails
+      # with a NETWORK error instead of an EROFS error, which is a readable diagnosis,
+      # and it is observed to stay EMPTY after every run.
+      TYPST_PACKAGE_CACHE_PATH: /work/.pkgcache
+      # Font set is the allowlist. --font-path is the ONLY source; system fonts are
+      # refused; embedded fonts are refused, so the set is exactly what we vendored.
+      TYPST_FONT_PATHS: /opt/typst-fonts
+      # NOTE (DEVIATION, reported to the architect): the policy skeleton and
+      # backend/src/render/sandbox.ts requiredEnvValues say "1" for these two. Typst
+      # 0.15.1's CLI reads them via clap as BOOLEAN flags and REJECTS "1":
+      #   error: invalid value '1' for '--ignore-system-fonts'
+      #     [possible values: true, false]
+      # so with "1" the worker cannot parse its own arguments and never renders.
+      # "true" is used here because it is the only value typst accepts. It is
+      # strictly MORE restrictive than the intent either way, and both settings are
+      # additionally present as explicit argv flags, which are authoritative.
+      # See .planning/progress/T1005-typst-toolchain-spike.md.
+      TYPST_IGNORE_SYSTEM_FONTS: "true"
+      TYPST_IGNORE_EMBEDDED_FONTS: "true"
+      # Determinism (R14, policy 7.4). Never wall clock. typst's PDF writer falls back
+      # to chrono::Local::now() when this is unset, and that timestamp is embedded in
+      # the PDF, so "two runs are byte-identical" is false without it. T1005 measured
+      # both directions: with this pinned the digests match, without it they differ.
+      SOURCE_DATE_EPOCH: "${SOURCE_DATE_EPOCH:-0}"
+      # Date formatting in a template must not depend on the container's zone, and
+      # locale-sensitive collation must not depend on the image (policy 7.4).
+      TZ: UTC
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
+      # No per-job HOME state anywhere (policy 3.4).
+      HOME: /nonexistent
+
+  # ---------------------------------------------------------------------------
+  # latex-worker - the LaTeX render worker. Same one-shot contract as typst-worker:
+  # NOT started by `docker compose up`, one container per compile, created and
+  # destroyed by the broker. Bring it up only to build or probe it:
+  #
+  #   docker compose build latex-worker
+  #   docker compose run --rm latex-worker --version
+  #
+  # The image is debian:bookworm-slim + texlive-latex-base + texlive-fonts-recommended;
+  # `pdflatex --version` inside reports TeX Live 2022. Isolation keys mirror the Typst
+  # worker and are asserted in backend/src/render/sandbox.ts.
+  # ---------------------------------------------------------------------------
+  latex-worker:
+    build:
+      context: ./backend/latex
+      dockerfile: Dockerfile
+    image: clearance/latex-worker:2022
+    # Explicitly opt-in: `docker compose up` does NOT start this one-shot job service.
+    # Build/probe it by name (`docker compose build latex-worker`,
+    # `docker compose run --rm latex-worker --version`), which is how typst-worker is used
+    # in practice. Named so an operator can see why it is absent from `up`.
+    profiles: ["render-workers"]
+    network_mode: "none"
+    read_only: true
+    ipc: "none"
+    user: "65532:65532"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    privileged: false
+    pids_limit: 64
+    mem_limit: 1073741824
+    memswap_limit: 1073741824
+    cpus: 1.0
+    oom_kill_disable: false
+    stop_grace_period: 5s
+    restart: "no"
+    stdin_open: false
+    tty: false
+    tmpfs:
+      - /work:rw,nosuid,nodev,noexec,size=32m,mode=0700,uid=65532,gid=65532
+      - /out:rw,nosuid,nodev,noexec,size=16m,mode=0700,uid=65532,gid=65532
+      - /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777
+    environment:
+      # argv is authoritative; these mirror the broker's plan for parity with the
+      # Typst worker. The compile itself is ALWAYS run by the broker with its own
+      # complete environment (createArgs.ts), never by this compose service.
+      TEXMFOUTPUT: /out
+      TEXMFHOME: /work/texmf-home
+      TEXMFCNF: /work/texmf-cnf:/usr/share/texlive/texmf-dist/web2c
+      TEXMFVAR: /work/texmf-var
+      shell_escape: f
+      SHELL_ESCAPE: f
+      openin_any: p
+      OPENIN_ANY: p
+      openout_any: p
+      OPENOUT_ANY: p
+      SOURCE_DATE_EPOCH: "${SOURCE_DATE_EPOCH:-0}"
+      FORCE_SOURCE_DATE: "1"
+      TZ: UTC
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
+      HOME: /nonexistent
+
+  # ---------------------------------------------------------------------------
+  # render-broker - the ONLY service that talks to Docker (T1031, ADR-042 D2).
+  #
+  # A process that can create containers is host-root-equivalent, so the API process must not
+  # be one. This service therefore owns /var/run/docker.sock and the backend talks to IT over
+  # a unix socket on a shared volume. `docker.sock` is mounted HERE AND NOWHERE ELSE: a
+  # socket inside the compile container (policy 4.5) or inside the backend would convert a
+  # Typst RCE into host takeover.
+  #
+  # Its OWN image, `backend/Dockerfile.broker` = the backend image + the Docker CLI. Not
+  # "the backend image with an entrypoint override": the API image must not contain a Docker
+  # client at all, even an unused one (ADR-042 D2). The `base` named context is declared by
+  # `additional_contexts`, so the broker is built from THIS tree's backend and the build
+  # order is part of the definition rather than of local image state.
+  #
+  # NOT `depends_on: db`, and NOT on the compose network for the compile path: the broker
+  # needs the socket, not the database. It does join the default network to be reachable as
+  # `render-broker` for the TCP dev fallback; the COMPILE containers it creates are the ones
+  # that get `network_mode: none`, from the argv `buildContainerCreateArgs` builds.
+  #
+  # Start it explicitly:
+  #   docker compose up -d render-broker
+  # `docker compose up` with no service name will also start it; the backend tolerates an
+  # absent broker (T1043 owns the call site and reports it as skipped-with-reason).
+  # ---------------------------------------------------------------------------
+  render-broker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.broker
+      additional_contexts:
+        # The backend service's built image, as a stage source. Declared rather than assumed,
+        # so `docker compose build render-broker` alone produces the right base.
+        - base=service:backend
+    image: clearance/render-broker:latest
+    # The broker, not the API. Everything else about the sandbox - the tmpfs `/work`, the
+    # three read-only binds, `network_mode: none`, the caps - is applied to the CONTAINER
+    # THIS SERVICE CREATES, from the argv policy 4.7 mandates. Those are not expressible as
+    # compose keys here, which is exactly why they are asserted in
+    # backend/src/render/broker/createArgs.ts against REQUIRED_COMPOSE_KEYS instead of
+    # written out a fourth time.
+    #
+    # `read_only: true` for the broker ITSELF: the broker writes only the bounded `/out`
+    # spool, which is a tmpfs below, and never to its own root filesystem.
+    read_only: true
+    # The ONE place in the whole stack that mounts the Docker socket. `ro` is NOT enough of
+    # a defence on its own (it would be enough for TYPST_CERT-style reads but not for
+    # container creation), and it is set anyway: the broker needs create/exec/kill, and no
+    # reader of this socket should be able to widen that.
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      - type: volume
+        source: render-broker-socket
+        target: /run/clearance-render
+      # The `/out` spool (policy 6.2's 20 MiB bound is enforced by the broker; the tmpfs is
+      # the kernel-side backstop) and the docker CLI's own config, if an operator sets one.
+      - type: tmpfs
+        target: /tmp
+    environment:
+      RENDER_BROKER_SOCKET: /run/clearance-render/broker.sock
+      # REQUIRED. An empty value makes the broker log one line and exit non-zero, so a
+      # deployment that forgot it fails at boot rather than accepting unauthenticated jobs.
+      # Set it in the root .env; the same value must reach the backend.
+      RENDER_BROKER_TOKEN: ${RENDER_BROKER_TOKEN:-}
+      RENDER_BROKER_SPOOL_ROOT: /tmp/clearance-render-spool
+      # Never `latest`: a render is cached on engineVersion (policy 10.4), so the worker image
+      # identity is part of the correctness story, and the preflight inspects this exact ref.
+      RENDER_BROKER_WORKER_IMAGE: clearance/typst-worker:0.15.1
+      # The LaTeX engine's image. When set, the broker's boot preflight inspects it too.
+      RENDER_BROKER_LATEX_WORKER_IMAGE: clearance/latex-worker:2022
+      RENDER_DOCKER_BIN: docker
+      # REQUIRED, and there is deliberately NO default. The three policy-4.5 binds are
+      # `--mount source=<this> + the repo-relative path policy 4.5 names`, and a `--mount`
+      # source is resolved by the DOCKER DAEMON, not by this container: the docker CLI
+      # expands a relative one against its OWN working directory, which here is `/app` and
+      # contains no repository, so a relative source made every `docker create` fail with
+      # `CONTAINER_CREATE_FAILED` (T1040 ruling 10, review F1).
+      #
+      # It must therefore be the checkout path AS THE DAEMON SEES IT, which is not always the
+      # path you typed:
+      #   Linux host            /home/you/clearance
+      #   Docker Desktop (Win)  /run/desktop/mnt/host/c/Users/you/clearance
+      #   Docker Desktop (mac)  /Users/you/clearance
+      # A wrong value is not a silent no-op: the broker refuses to boot with one line, and
+      # the create-argv invariant re-checks that all three binds sit under it.
+      RENDER_HOST_TYPST_ROOT: ${RENDER_HOST_TYPST_ROOT:-}
+    # The broker has no `restart: unless-stopped` neighbour to depend on and no health check
+    # on the daemon: a missing worker image is a BOOT preflight failure (one log line, exit
+    # 1), not a container that crash-loops.
+    restart: unless-stopped
+    # Long enough for the 10 s wall budget, the 2 s kill grace and a `docker create` against a
+    # cold daemon, and short enough that a wedged broker is noticed by `docker compose ps`.
+    stop_grace_period: 45s
+    command: ["node", "dist/render/broker/index.js"]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Vite bakes VITE_* at BUILD time, so these come from the root .env
+      # (compose interpolation) with defaults mirroring .env.example.
+      # Changing any of them requires a rebuild (`up --build`).
+      # NOTE: the browser calls the backend directly, so VITE_API_URL stays
+      # the host-reachable URL (default http://localhost:3001/api), NOT the
+      # compose-internal http://backend:3001/api (unreachable from a browser).
+      #
+      # V2_* feature flags (T1002) are build args here for the same reason and
+      # for a stronger one: backend/src/config/flags.ts and src/lib/flags.ts
+      # read the SAME env key names, and the backend gets the root .env via
+      # `env_file`, while the browser bundle can ONLY get them from here (the
+      # image has no .env - `.dockerignore` excludes it). Without these three
+      # args a `V2_*=true` in the root .env would enable the backend flag and
+      # leave the bundle permanently OFF: a silent half-rollout. vite.config.ts
+      # exposes them via `envPrefix: ['VITE_', 'V2_']`. All default OFF.
+      args:
+        VITE_APP_URL: ${VITE_APP_URL:-}
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3001/api}
+        VITE_ENABLE_PUBLIC_SCAN: ${VITE_ENABLE_PUBLIC_SCAN:-true}
+        VITE_ENABLE_AI_FEATURES: ${VITE_ENABLE_AI_FEATURES:-true}
+        VITE_GA_MEASUREMENT_ID: ${VITE_GA_MEASUREMENT_ID:-}
+        VITE_POSTHOG_KEY: ${VITE_POSTHOG_KEY:-}
+        V2_RESUME_STUDIO: ${V2_RESUME_STUDIO:-false}
+        V2_DISABLE_FREE_AI_GENERATION: ${V2_DISABLE_FREE_AI_GENERATION:-false}
+        V2_TYPST_RENDER: ${V2_TYPST_RENDER:-false}
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  # T1031: the broker's transport. A directory volume, not a bind, so the broker's socket
+  # lands in a path compose manages and unlinks on exit rather than in the developer's tree.
+  render-broker-socket:
+  # T1032's storage root, mounted rw on the backend ONLY (policy 4.5, ADR-041 D2).
+  render-artifacts:

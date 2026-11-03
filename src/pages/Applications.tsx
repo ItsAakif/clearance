@@ -1,37 +1,30 @@
 import { useState, useMemo } from 'react';
-import { AppLayout } from '@/components/layout';
+import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Briefcase, Loader2, ChevronRight } from 'lucide-react';
-import { useApplications, useUpdateApplication, useCreateApplicationEvent } from '@/hooks/useJobs';
+import { PageBody } from '@/components/layout';
+import { Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { toast } from '@/hooks/use-toast';
+import { useApplications, useUpdateApplication } from '@/hooks/useJobs';
+import { applicationsQueryKey } from '@/hooks/useJobs';
 import { ApplicationAnalytics } from '@/features/applications/ApplicationAnalytics';
 import { FollowUpReminders } from '@/features/applications/FollowUpReminders';
 import { ApplicationPipeline } from '@/features/applications/ApplicationPipeline';
-import { ApplicationDetailDialog } from '@/features/applications/ApplicationDetailDialog';
+import { ApplicationTable } from '@/features/applications/ApplicationTable';
 import { JobComparisonDialog } from '@/features/applications/JobComparisonDialog';
-import { FUNNEL_STAGES, TERMINAL_STAGES, ALL_APPLICATION_STATUSES } from '@/features/applications/applicationConstants';
-import type { Application, ApplicationStatus, CreateApplicationEventInput } from '@/services/api';
+import type { Application, ApplicationStatus } from '@/services/api';
 
-type StatusFilter = 'all' | ApplicationStatus;
-
-const FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  ...FUNNEL_STAGES.map((s) => ({ value: s as StatusFilter, label: s.charAt(0).toUpperCase() + s.slice(1) })),
-  ...TERMINAL_STAGES.map((s) => ({ value: s as StatusFilter, label: s.charAt(0).toUpperCase() + s.slice(1) })),
-];
+type ViewMode = 'board' | 'table';
 
 export default function ApplicationsPage() {
   const { data: apps = [], isLoading } = useApplications();
   const updateApp = useUpdateApplication();
-  const createEvent = useCreateApplicationEvent();
-  const [filter, setFilter] = useState<StatusFilter>('all');
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const [view, setView] = useState<ViewMode>('board');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [detailApp, setDetailApp] = useState<Application | null>(null);
-
-  const filteredApps = useMemo(() => {
-    if (filter === 'all') return apps;
-    return apps.filter((a) => a.status === filter);
-  }, [apps, filter]);
+  const [showAnalytics, setShowAnalytics] = useState(false);
 
   const handleToggleCompare = (id: string) => {
     setSelectedIds((prev) => {
@@ -40,72 +33,115 @@ export default function ApplicationsPage() {
     });
   };
 
-  const handleStatusChange = (app: Application, status: ApplicationStatus) => {
-    updateApp.mutate({ id: app.id, status });
+  const handleStatusChange = async (app: Application, status: ApplicationStatus) => {
+    const prev = qc.getQueryData<Application[]>(applicationsQueryKey);
+    qc.setQueryData<Application[]>(applicationsQueryKey, (old) =>
+      old ? old.map((a) => (a.id === app.id ? { ...a, status } : a)) : old,
+    );
+    try {
+      await updateApp.mutateAsync({ id: app.id, status });
+    } catch (e) {
+      qc.setQueryData(applicationsQueryKey, prev);
+      toast({ title: 'Update failed', description: (e as Error).message, variant: 'destructive' });
+      throw e;
+    }
   };
 
   const handleSetReminder = (app: Application, date: string | null) => {
     updateApp.mutate({ id: app.id, followUpAt: date });
   };
 
-  const handleAddEvent = (data: CreateApplicationEventInput) => {
-    if (!detailApp) return;
-    createEvent.mutate({ applicationId: detailApp.id, ...data });
+  const openWorkspace = (app: Application) => {
+    navigate(`/app/applications/${app.id}`);
   };
 
+  const summary = useMemo(() => {
+    const waiting = apps.filter((a) => a.status === 'applied' || a.status === 'tailored').length;
+    const conversation = apps.filter((a) => a.status === 'interview').length;
+    return `${apps.length} application${apps.length === 1 ? '' : 's'}: ${waiting} waiting to hear back, ${conversation} in conversation.`;
+  }, [apps]);
+
   if (isLoading) {
-    return <AppLayout><div className="flex h-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></AppLayout>;
+    return <div className="flex h-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-ink-3" /></div>;
   }
 
   return (
-    <AppLayout>
-      <div className="flex h-full flex-col">
-        <header className="border-b border-border bg-card px-6 py-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-lg font-semibold text-foreground">Application Pipeline</h1>
-              <p className="text-sm text-muted-foreground">Track every application - you stay in control of submissions</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" disabled={selectedIds.length < 2} onClick={() => {}}>
-                Compare selected ({selectedIds.length}/3)
-              </Button>
-              <Select value={filter} onValueChange={(v) => setFilter(v as StatusFilter)}>
-                <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {FILTER_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+    <div className="flex h-full flex-col">
+      <header className="border-b border-border bg-paper px-8 py-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="page-title text-ink">Applications</h1>
+            <p className="mt-1 text-sm text-ink-3">{summary}</p>
           </div>
-        </header>
-        <div className="flex-1 overflow-auto p-6">
-          {apps.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground">
-              <Briefcase className="mb-3 h-10 w-10 opacity-40" />
-              <p className="text-sm">No applications yet. Evaluate a job and save it to the pipeline.</p>
-              <Button variant="link" className="mt-2" onClick={() => (window.location.href = '/app/jobs')}>Browse jobs</Button>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1 rounded-full bg-secondary p-1" role="group" aria-label="Applications view">
+              {(['board', 'table'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setView(mode)}
+                  aria-pressed={view === mode}
+                  className={cn(
+                    'rounded-full px-3 py-1 text-sm transition-colors duration-150',
+                    view === mode
+                      ? 'bg-card text-ink shadow-e1'
+                      : 'text-ink-3 hover:text-ink',
+                  )}
+                >
+                  {mode === 'board' ? 'Board' : 'Table'}
+                </button>
+              ))}
             </div>
-          ) : (
-            <div className="space-y-4">
-              <ApplicationAnalytics apps={apps} />
-              <FollowUpReminders apps={apps} onSetReminder={handleSetReminder} />
+            <Button onClick={() => navigate('/app/jobs')}>New application</Button>
+          </div>
+        </div>
+      </header>
+      <PageBody width="full" className="flex-1 overflow-auto px-8 py-6">
+        {apps.length === 0 ? (
+          <div className="surface-card max-w-md p-5">
+            <p className="text-sm text-ink-3">No applications yet. Save an evaluated job to start the pipeline.</p>
+            <button
+              type="button"
+              onClick={() => navigate('/app/jobs')}
+              className="mt-2 text-sm text-accent-dark underline-offset-4 hover:underline"
+            >
+              Browse jobs
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            <FollowUpReminders apps={apps} onSetReminder={handleSetReminder} />
+            {view === 'board' ? (
               <ApplicationPipeline
-                apps={filteredApps}
+                apps={apps}
                 selectedIds={selectedIds}
                 onToggleCompare={handleToggleCompare}
-                onOpen={setDetailApp}
+                onOpen={openWorkspace}
                 onStatusChange={handleStatusChange}
               />
+            ) : (
+              <ApplicationTable apps={apps} onOpen={openWorkspace} onStatusChange={handleStatusChange} />
+            )}
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowAnalytics((s) => !s)}
+                className="text-xs2 text-ink-3 underline-offset-4 hover:text-ink hover:underline"
+                aria-expanded={showAnalytics}
+              >
+                {showAnalytics ? 'Hide analytics' : 'Show analytics'}
+              </button>
+              {showAnalytics && (
+                <div className="mt-4">
+                  <ApplicationAnalytics apps={apps} />
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        )}
+      </PageBody>
 
-      <ApplicationDetailDialog app={detailApp} onClose={() => setDetailApp(null)} onStatusChange={handleStatusChange} onSetReminder={handleSetReminder} />
       <JobComparisonDialog apps={apps} selectedIds={selectedIds} open={selectedIds.length >= 2} onOpenChange={(open) => !open && setSelectedIds([])} />
-    </AppLayout>
+    </div>
   );
 }

@@ -1,0 +1,50 @@
+# syntax=docker/dockerfile:1
+#
+# ---- Clearance RENDER BROKER image (T1031) ---------------------------------
+#
+# The backend image PLUS the Docker CLI, and nothing else. That is the entire reason this
+# file exists (T1040 ruling 11, ESC-1).
+#
+# WHY A SEPARATE IMAGE, stated so a future "simplification" does not undo it. A process that
+# can create containers is host-root-equivalent, so ADR-042 D2 splits the stack in two: the API
+# process reaches a render over a unix socket, and the BROKER is the only process that holds
+# the Docker socket. The natural way to get the broker's CLI without a second Node install is
+# to add `docker.io` to `backend/Dockerfile` and run two roles out of one image - and that
+# puts a Docker client inside the API image, which is the thing D2 exists to prevent. A
+# compromise (unused, therefore "harmless") is not a compromise: the image is the artifact an
+# attacker reaches, and an unused client in it is one `npm i` away from a used one. So the
+# broker gets its own image and `backend/Dockerfile` is not touched.
+#
+# ONLY THE CLI IS ADDED. The daemon is NOT: the broker talks to the host daemon over the
+# mounted `/var/run/docker.sock`, and shipping a second daemon inside the broker would be both
+# larger and a second thing that could be the one that runs. The binary is copied from
+# Docker's own CLI image rather than installed from a distribution package because
+# (a) it is a static Go binary with no libc dependency, so it drops into `node:20-slim`
+# unchanged, and (b) `docker.io` in Debian pulls the daemon, containerd and runc with it,
+# which is ~400 MB of attack surface for a binary that only ever runs
+# `create`/`start`/`exec`/`kill`/`rm`/`image inspect`/`ps` against someone else's daemon.
+#
+# The version is PINNED, and the CLI/daemon pair does not have to match: the docker CLI
+# negotiates the API version with whatever daemon answers the socket, and every subcommand
+# this broker uses is older than the oldest API version either side supports.
+#
+# THE BASE IS A NAMED CONTEXT, not a published image name. `docker-compose.yml` passes
+# `base=service:backend`, so the broker is always built from the backend source in THIS tree
+# (same `package.json`, same `npm run build`, same `dist/`), and the build order is declared
+# rather than left to whichever image happens to exist locally. Without BuildKit the build
+# fails loudly on the missing context rather than silently producing a broker on top of a
+# stale base.
+
+ARG BASE_IMAGE=base
+FROM ${BASE_IMAGE}
+
+# Nothing else changes: the WORKDIR, the NODE_ENV, the CMD and the whole filesystem are the
+# backend image's. The compose service overrides the command with the broker entry point.
+COPY --from=docker:28-cli /usr/local/bin/docker /usr/local/bin/docker
+
+# A boot-time self-check, so a broker that somehow came up without a CLI fails with a line
+# that says which file is missing rather than a `preflight` that reports a missing IMAGE.
+# `RENDER_DOCKER_BIN` is the key the broker spawns, so this checks the same path it uses.
+RUN set -eu; \
+    test -x /usr/local/bin/docker; \
+    /usr/local/bin/docker --version

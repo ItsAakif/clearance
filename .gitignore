@@ -40,6 +40,14 @@ backend/dist/
 # Local embedded Postgres data (see backend `npm run db:local`)
 backend/.data/
 
+# Artifact storage root (ADR-041 D2 / ADR-044 D2, backend/src/render/storage.ts).
+# Content-addressed render artifacts live here; the default is `backend/.artifacts` and
+# `RENDER_STORAGE_ROOT` overrides it in production. Never commit an artifact.
+.artifacts/
+
+# GeoNames dump cache for scripts/build-cities.mjs (never commit the dump or zips)
+.cache/geonames/
+
 # Junk files
 nul
 *.lnk
@@ -50,3 +58,20 @@ Thumbs.db
 
 # Deepwork
 .slim/deepwork/
+
+# ==================== Agent-only and local-only paths ====================
+# Never published. These hold planning notes, agent instructions, scratch
+# output and local tooling state; they stay on disk for the owner only.
+.agent/
+.cache/
+.planning/
+.kilo/
+.spike-out/
+sweep-69660-pages-under-2h/
+rules/
+landing/
+MEMORY.md
+oh-my-opencode-setup-summary.md
+*.tsbuildinfo
+nul
+backend-dev.*

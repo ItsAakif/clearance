@@ -2,6 +2,14 @@ import { Router, Request, Response } from 'express';
 import { chromium } from 'playwright';
 import { BadRequestError, handleApiError } from '../shared/errors.js';
 import { requireAuth } from '../middleware/auth.js';
+import { ensureOwnership } from '../shared/auth.js';
+import prisma from '../lib/prisma.js';
+// T1030 F10: the V2 cutover guard. Frozen file, see resume/legacyExportGuard.ts.
+import {
+  LEGACY_EXPORT_REFUSED_STATUS,
+  isClearanceControlled,
+  legacyExportRefusal,
+} from '../resume/legacyExportGuard.js';
 import HTMLtoDOCX from 'html-to-docx';
 
 const router = Router();
@@ -9,7 +17,40 @@ const router = Router();
 type ExportRequestBody = {
   html?: string;
   documentName?: string;
+  /**
+   * The resume this HTML was rendered FROM, when the caller knows it.
+   *
+   * Added by T1030 F10, not as a feature: it is the attribution the V2 refusal needs.
+   * A V2 resume is under clearance control, so its HTML may only be produced by the
+   * gated renderer; if a caller names a V2 resume here, the conversion is refused with
+   * the gated path in the body. Omitting it is not an escape hatch for a V2 document -
+   * there is no V2 HTML to convert until the gated renderer exists (T1042) - and the
+   * legacy HTML-template fallback is explicitly kept (FREEZE.md K-01) for V1 rows.
+   */
+  resumeId?: string;
 };
+
+/**
+ * T1030 F10. Refuses a conversion of a V2 resume's rendered HTML, before Chromium is
+ * launched and before `html-to-docx` is called.
+ *
+ * Same ATTRIBUTION rule as the `*-preview` routes and for the same reason: these
+ * endpoints take HTML, not a resume, so a refusal can only key on a resume the caller
+ * names. Unattributed HTML is not a V2 artifact - the gated renderer does not exist yet
+ * and this is the documented HTML fallback - so it is left working.
+ */
+async function refuseIfV2ResumeNamed(req: Request, res: Response): Promise<boolean> {
+  const resumeId = (req.body as ExportRequestBody | undefined)?.resumeId;
+  if (typeof resumeId !== 'string' || resumeId.length === 0) return false;
+  const resume = await prisma.resume.findUnique({
+    where: { id: resumeId },
+    select: { id: true, userId: true, modelVersion: true },
+  });
+  if (!resume || !isClearanceControlled(resume)) return false;
+  await ensureOwnership(req.user!.id, resume.userId, 'Resume');
+  res.status(LEGACY_EXPORT_REFUSED_STATUS).json(legacyExportRefusal(resume));
+  return true;
+}
 
 function ensureHtmlDocument(html: string): string {
   if (/<html[\s>]/i.test(html)) {
@@ -54,6 +95,10 @@ function parseExportRequest(req: Request): { html: string; documentName: string 
 
 router.post('/html-to-pdf', requireAuth, async (req: Request, res: Response) => {
   try {
+    // T1030 F10: the refusal runs before `parseExportRequest`, so a V2 resume is refused
+    // even if its body is otherwise malformed - the gate does not depend on the rest of
+    // the request being well-formed.
+    if (await refuseIfV2ResumeNamed(req, res)) return;
     const { html, documentName } = parseExportRequest(req);
 
     const browser = await chromium.launch({
@@ -81,6 +126,7 @@ router.post('/html-to-pdf', requireAuth, async (req: Request, res: Response) => 
 
 router.post('/html-to-docx', requireAuth, async (req: Request, res: Response) => {
   try {
+    if (await refuseIfV2ResumeNamed(req, res)) return; // T1030 F10
     const { html, documentName } = parseExportRequest(req);
     const buffer = await HTMLtoDOCX(html, null, {
       table: { row: { cantSplit: true } },

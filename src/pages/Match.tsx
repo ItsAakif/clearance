@@ -1,345 +1,388 @@
-import { useState, useRef, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { AppLayout } from "@/components/layout";
-import { JobMatchResults } from "@/features/job-match";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Card } from "@/components/ui/card";
-import { Search, FileText, Loader2, Upload } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useResumes } from "@/hooks/useResumeApi";
-import { uploadedFilesApi, type UploadedFileSummary } from "@/services/api/resume";
-import { atsApi } from "@/services/api/ats";
-import { useToast } from "@/hooks/use-toast";
+// Match (V2 evidence-level match report) - T1070, 06 sec. E.2, E.6, E.11 flow 7.
+//
+// WHAT THIS PAGE WAS. The V1 "Job Match" screen: paste a job description, pick a resume (or
+// upload a PDF), press "Analyse Match", and read a `matchScore` out of the legacy
+// `POST /ats/match-job` response, with keyword lists and "Build tailored resume" wired to
+// the frozen V1 builder. That is exactly the surface 06 sec. E.6 orders replaced - it computed
+// and displayed a single number.
+//
+// WHAT IT IS NOW. The four-bucket report over the user's CONFIRMED career claims: Direct /
+// Contextual / Potential / Gap as four plain integers, each requirement with its evidence and
+// Confirm/Reject on the two proposal levels, and the gaps listed by name. There is no score,
+// no percentage and no total-fit figure anywhere on this page, and
+// `features/match/noScore.test.ts` fails if one is added.
+//
+// THE RULES THE PAGE ITSELF ENFORCES:
+//   - NOTHING IS SCORED. No arithmetic over the counts, here or in the presentation module.
+//   - AN INFERENCE IS NEVER EXPERIENCE. A suggestion stays a suggestion until the user
+//     presses Confirm, and the button says so in full ("Confirm this is my experience").
+//   - AFTER EVERY DECISION THE REPORT IS RE-READ, not patched in place. A Confirm creates a
+//     confirmed statement through the verification service and a Reject creates a named gap,
+//     and both decisions can be REFUSED server-side (409: already rejected, already
+//     confirmed, an unmappable requirement kind). The screen the user is about to act on
+//     must reflect what the database says, including the counters.
+//   - A MISSING PROVIDER IS NOT AN ERROR. The report says the suggestion stage was skipped
+//     and that the counts are unaffected, because they are derived from confirmed statements.
+//
+// FLAG GATED by the EXISTING `v2ResumeStudio` flag, like every other V2 page - but the ROUTE
+// is not gated, only its element. `/app/match` is registered in BOTH flag states (one
+// registration in `src/App.tsx` with a flag-aware element): with the flag off it renders
+// `MatchLegacy`, the V1 page restored verbatim, because nine flag-off links already point at
+// this path and leaving it unregistered 404'd every one of them. No new flag is introduced
+// and the cross-runtime flag-name contract is untouched.
 
-interface MatchResult {
-  id?: string;
-  matchScore: number;
-  matchedKeywords: string[];
-  missingKeywords: string[];
-  suggestions: string[];
-  detectedRole?: string | null;
-  criticalMissing?: string[];
-  preferredMissing?: string[];
-  roleSuggestions?: string[];
-  tailoringTips?: string[];
+import { useCallback, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { PageShell } from "@/components/layout/PageShell";
+import { SectionView } from "@/components/layout/SectionView";
+import { MatchSectionTabs } from "@/components/layout/SectionTabs";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2 } from "lucide-react";
+import { EvidenceLevelBadge } from "@/features/match/EvidenceLevelBadge";
+import { LevelCounters } from "@/features/match/LevelCounters";
+import { NamedGaps } from "@/features/match/NamedGaps";
+import { RequirementList } from "@/features/match/RequirementList";
+import {
+  INFERENCE_RULE,
+  isEmptyReport,
+  proposalStageMessage,
+} from "@/features/match/matchPresentation";
+import { ApiClientError } from "@/services/api/client";
+import { matchApi, type MatchReport, type MatchRequirement } from "@/services/api/match";
+import {
+  projectDiscoveryApi,
+  type ProjectOpportunity,
+} from "@/services/api/projectDiscovery";
+
+const SAMPLE_JD = `Staff Platform Engineer
+
+Requirements
+- Strong Kubernetes and Terraform skills
+- 5+ years of relevant experience
+- PostgreSQL and Python`;
+
+function messageFor(caught: unknown, fallback: string): string {
+  if (caught instanceof ApiClientError) return caught.message;
+  return fallback;
 }
 
-export default function MatchPage() {
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+/**
+ * The three-line preview under a finished report.
+ *
+ * Only rendered when the discovery call actually stored candidates: an empty run is
+ * not an empty card, it is nothing. Nothing here is a verdict - the hours are the
+ * two-day BUDGET and the stack is what the candidate would run on.
+ */
+function SuggestedProjects({ candidates }: { candidates: ProjectOpportunity[] }) {
+  return (
+    <Card aria-label="Suggested projects">
+      <CardHeader>
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <CardTitle>Suggested projects</CardTitle>
+          <Link
+            to="/app/match/projects"
+            className="text-xs2 text-ink-2 underline-offset-4 hover:text-ink hover:underline"
+          >
+            All projects
+          </Link>
+        </div>
+        <CardDescription>
+          Two-day projects that would close the gaps above. Nothing is added to your profile
+          unless you confirm it.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ul className="space-y-3">
+          {candidates.slice(0, 3).map((candidate) => (
+            <li key={candidate.id} className="border-b border-rule pb-3 last:border-b-0 last:pb-0">
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="text-[15px] font-medium leading-snug text-ink">
+                  {candidate.title}
+                </h3>
+                <span className="num shrink-0 text-xs2 text-ink-3">
+                  {candidate.estimatedHours}h
+                </span>
+              </div>
+              <p className="mt-1 line-clamp-2 text-sm text-ink-3">{candidate.idea}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {candidate.stack.slice(0, 3).map((technology) => (
+                  <Badge key={technology} variant="secondary" className="text-xs">
+                    {technology}
+                  </Badge>
+                ))}
+                <Link
+                  to="/app/match/projects"
+                  className="ml-auto text-xs2 text-ink-2 underline-offset-4 hover:text-ink hover:underline"
+                >
+                  Open
+                </Link>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function Match() {
   const [jobDescription, setJobDescription] = useState("");
-  const [selectedResumeId, setSelectedResumeId] = useState("");
-  const [selectedUploadedFileId, setSelectedUploadedFileId] = useState("");
-  const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isBuilding, setIsBuilding] = useState(false);
-  const initializedRef = useRef(false);
+  const [report, setReport] = useState<MatchReport | null>(null);
+  const [running, setRunning] = useState(false);
+  const [busyPotentialId, setBusyPotentialId] = useState<string | null>(null);
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [suggestedProjects, setSuggestedProjects] = useState<ProjectOpportunity[]>([]);
+  // `discover` CREATES rows, so it runs at most once per match report. A decision
+  // re-reads the report and must not trigger it again; neither may a re-render.
+  const discoveredReportIds = useRef(new Set<string>());
+  // The report whose suggestions may be shown. A slow discovery for an earlier
+  // match must not land under a newer report.
+  const activeReportId = useRef<string | null>(null);
 
-  const { data: resumes = [], isLoading: loadingResumes } = useResumes();
-  const { toast } = useToast();
-
-  // Initialize selectedResumeId from query param once resumes are loaded
-  useEffect(() => {
-    if (initializedRef.current) return;
-    const qResumeId = searchParams.get("resumeId");
-    if (qResumeId && resumes.some((r) => r.id === qResumeId)) {
-      setSelectedResumeId(qResumeId);
+  /**
+   * Run project discovery for a report, once.
+   *
+   * This is an enhancement, never a blocker: a refusal, a missing provider or an
+   * empty run leaves the report exactly as it was, with no toast and no empty card.
+   */
+  const discoverProjects = useCallback(async (matchReportId: string) => {
+    if (discoveredReportIds.current.has(matchReportId)) return;
+    discoveredReportIds.current.add(matchReportId);
+    try {
+      const discovery = await projectDiscoveryApi.discover({ matchReportId });
+      if (activeReportId.current !== matchReportId) return;
+      setSuggestedProjects(discovery.candidates.slice(0, 3));
+    } catch {
+      // Deliberately silent: suggested projects are an enhancement to the report.
     }
-    initializedRef.current = true;
-  }, [searchParams, resumes]);
-
-  // Raw uploaded files (PDF/DOCX/TXT) - stored for Job Match only, never parsed
-  // into builder resumes and never shown in "My Resumes".
-  const [uploadedFiles, setUploadedFiles] = useState<UploadedFileSummary[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isUploading, setIsUploading] = useState(false);
-
-  useEffect(() => {
-    uploadedFilesApi
-      .list()
-      .then(setUploadedFiles)
-      .catch(() => setUploadedFiles([]));
   }, []);
 
-  const handleFileUpload = async (file: File) => {
-    setIsUploading(true);
+  const proposalStage = useMemo(
+    () => (report ? proposalStageMessage(report.proposalStage.status, report.proposalStage.reason) : null),
+    [report],
+  );
+
+  /**
+   * Analyse + match.
+   *
+   * Two server calls because they are two server concerns. Analysis is idempotent on the
+   * cleaned text, so pasting the same JD twice is one `Job`; matching then re-derives from
+   * whatever that analysis produced. Doing it in one click is what makes the page usable
+   * without a job picker, and it is honest: the report names the job it matched.
+   */
+  const runMatch = useCallback(async () => {
+    if (jobDescription.trim().length === 0) return;
+    setRunning(true);
+    setPageError(null);
+    setRowErrors({});
+    setNotice(null);
+    setSuggestedProjects([]);
     try {
-      const created = await uploadedFilesApi.upload(file);
-      const list = await uploadedFilesApi.list();
-      setUploadedFiles(list);
-      setSelectedResumeId("");
-      setSelectedUploadedFileId(created.id);
-      toast({ title: "File uploaded", description: `"${created.fileName}" is ready to match.` });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Upload failed";
-      toast({ title: "Upload failed", description: message, variant: "destructive" });
+      const analysis = await matchApi.analyzeJob(jobDescription.trim());
+      const matched = await matchApi.matchJob(analysis.jobId);
+      setReport(matched);
+      activeReportId.current = matched.matchReportId;
+      setSuggestedProjects([]);
+      void discoverProjects(matched.matchReportId);
+      if (analysis.analysis.method === "deterministic" && analysis.analysis.llm.status === "skipped") {
+        setNotice(
+          `Requirements were found by keyword extraction (no AI provider configured). ${analysis.analysis.requirements.length} requirement${analysis.analysis.requirements.length === 1 ? "" : "s"} were read from the text you pasted.`,
+        );
+      }
+    } catch (caught) {
+      setPageError(messageFor(caught, "The match could not be produced."));
     } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      setRunning(false);
     }
-  };
-  
-  const hasSelection = Boolean(selectedResumeId || selectedUploadedFileId);
+  }, [discoverProjects, jobDescription]);
 
-  const handleAnalyse = async () => {
-    if (!jobDescription.trim() || !hasSelection) {
-      toast({
-        title: "Please fill in all fields",
-        description: "Select a resume or upload a file, and paste the job description",
-        variant: "destructive",
+  /**
+   * One decision, then RE-READ the report.
+   *
+   * The response already carries the fresh report, so the screen updates from what the
+   * server derived rather than from an optimistic guess - which matters because a Confirm or a
+   * Reject can be refused, and a level the user was about to click must never move on a
+   * guess.
+   */
+  const runDecision = useCallback(
+    async (requirement: MatchRequirement, action: "confirm" | "reject") => {
+      const proposal = requirement.potentialMatch;
+      const matchReportId = report?.matchReportId ?? null;
+      if (!proposal || !matchReportId) return;
+      setBusyPotentialId(proposal.id);
+      setRowErrors((current) => {
+        const next = { ...current };
+        delete next[requirement.id];
+        return next;
       });
-      return;
-    }
-
-    setIsAnalyzing(true);
-    try {
-      const result = await atsApi.matchJob(
-        { resumeId: selectedResumeId || undefined, uploadedFileId: selectedUploadedFileId || undefined },
-        jobDescription.trim()
-      );
-      
-      setMatchResult(result);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Analysis failed";
-      toast({
-        title: "Analysis failed",
-        description: message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
-  // Build a tailored resume from the analysed JD + the user's selected resume,
-  // then open it directly in the builder.
-  const handleBuildTailored = async () => {
-    if (!selectedResumeId || !jobDescription.trim()) {
-      toast({
-        title: "Nothing to build from",
-        description: "Run a match first by selecting a resume and pasting a job description.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsBuilding(true);
-    try {
-      const created = await atsApi.buildFromJd({
-        jobDescription: jobDescription.trim(),
-        resumeId: selectedResumeId,
-      });
-      toast({
-        title: "Tailored resume created",
-        description: "We built a draft based on your resume and the job description.",
-      });
-      navigate(`/app/build/${created.id}?jobMatchId=${matchResult?.id ?? ''}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Build failed";
-      toast({
-        title: "Could not build tailored resume",
-        description: message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsBuilding(false);
-    }
-  };
+      setNotice(null);
+      try {
+        const decision =
+          action === "confirm"
+            ? await matchApi.confirmPotential(matchReportId, proposal.id)
+            : await matchApi.rejectPotential(matchReportId, proposal.id, {
+                reason: "Not my experience",
+              });
+        setReport(decision.report);
+        setNotice(
+          action === "confirm"
+            ? decision.changed
+              ? `"${requirement.text}" is now direct evidence: a statement you confirmed says it.`
+              : `"${requirement.text}" was already confirmed.`
+            : `"${requirement.text}" is now a named gap, and the rejection is on the record.`,
+        );
+      } catch (caught) {
+        setRowErrors((current) => ({
+          ...current,
+          [requirement.id]: messageFor(caught, "That decision was not recorded."),
+        }));
+      } finally {
+        setBusyPotentialId(null);
+      }
+    },
+    [report],
+  );
 
   return (
-    <AppLayout>
-      <div className="flex h-full flex-col">
-        {/* Page header */}
-        <header className="border-b border-border bg-card px-6 py-4">
-          <h1 className="text-lg font-semibold text-foreground">Job Match</h1>
-          <p className="text-sm text-muted-foreground">
-            Compare your resume against a job description
-          </p>
-          {searchParams.get("resumeId") && resumes.some((r) => r.id === searchParams.get("resumeId")) && (
-            <p className="mt-1 text-xs text-muted-foreground" aria-live="polite">
-              Opened with a pre-selected resume from your library.
-            </p>
-          )}
-        </header>
+    <PageShell title="Match" width="data">
+      <MatchSectionTabs />
+      <SectionView
+        title="Job match"
+        description="Compare a job description against the statements you have confirmed. Nothing here is scored, and nothing is counted until you confirm it."
+      />
+      <div className="space-y-6">
+        {pageError ? (
+          <Alert variant="destructive">
+            <AlertTitle>Something went wrong</AlertTitle>
+            <AlertDescription>
+              {pageError}{" "}
+              <button type="button" className="underline underline-offset-2" onClick={() => void runMatch()}>
+                Retry
+              </button>
+            </AlertDescription>
+          </Alert>
+        ) : null}
 
-        {/* Content */}
-        <div className="flex-1 overflow-auto">
-          <div className="mx-auto max-w-4xl space-y-6 p-6">
-            {/* Resume Selection */}
-            <Card className="p-6">
-              <div className="mb-4 flex items-center gap-2">
-                <FileText className="h-5 w-5 text-muted-foreground" />
-                <h2 className="font-semibold text-foreground">Select Resume</h2>
-              </div>
+        {notice ? (
+          <Alert>
+            <AlertDescription>{notice}</AlertDescription>
+          </Alert>
+        ) : null}
 
-              {loadingResumes ? (
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading resumes...
-                </div>
-              ) : (
-                <div className="space-y-5">
-                  {/* Option 1: builder resume from "My Resumes" */}
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      From My Resumes
-                    </p>
-                    {resumes.length > 0 ? (
-                      <Select
-                        value={selectedResumeId}
-                        onValueChange={(v) => {
-                          setSelectedResumeId(v);
-                          setSelectedUploadedFileId("");
-                        }}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Choose a resume to compare..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {resumes.map((resume) => (
-                            <SelectItem key={resume.id} value={resume.id}>
-                              {resume.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        No builder resumes yet.
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <div className="h-px flex-1 bg-border" />
-                    <span className="text-xs text-muted-foreground">or</span>
-                    <div className="h-px flex-1 bg-border" />
-                  </div>
-
-                  {/* Option 2: raw uploaded file (PDF/DOCX) - matched as-is */}
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Uploaded file (raw PDF / DOCX)
-                    </p>
-                    {uploadedFiles.length > 0 && (
-                      <Select
-                        value={selectedUploadedFileId}
-                        onValueChange={(v) => {
-                          setSelectedUploadedFileId(v);
-                          setSelectedResumeId("");
-                        }}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Choose an uploaded file..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {uploadedFiles.map((file) => (
-                            <SelectItem key={file.id} value={file.id}>
-                              {file.fileName}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full gap-2"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isUploading}
-                    >
-                      {isUploading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Upload className="h-4 w-4" />
-                      )}
-                      {isUploading ? "Uploading..." : "Upload a PDF / DOCX resume"}
-                    </Button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".pdf,.docx,.txt"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleFileUpload(file);
-                      }}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Uploaded files are stored as-is and matched against the job
-                      description. They are not parsed into builder resumes.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </Card>
-
-            {/* Job description input */}
-            <Card className="p-6">
-              <div className="mb-4 flex items-center gap-2">
-                <FileText className="h-5 w-5 text-muted-foreground" />
-                <h2 className="font-semibold text-foreground">Job Description</h2>
-              </div>
+        <section className="surface-card p-5">
+  <h2 className="section-title">Job description</h2>
+  <div className="mt-2 border-t border-rule" />
+  <p className="mt-3 text-sm text-ink-3">Paste the description. It is read for requirements, then compared against your
+              confirmed statements. Nothing is written about you by this step.</p>
+  <div className="mt-3 space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="match-jd" className="text-xs2">
+                Job description
+              </Label>
               <Textarea
-                placeholder="Paste the job description here...
-
-Example:
-We are looking for a Senior Software Engineer to join our team. You will be responsible for designing, developing, and maintaining scalable web applications. 
-
-Requirements:
-- 5+ years of experience with React and TypeScript
-- Experience with cloud platforms (AWS preferred)
-- Strong understanding of system design principles
-- Excellent communication and leadership skills"
-                className="min-h-[200px] resize-none"
+                id="match-jd"
+                className="min-h-[180px] resize-none"
+                placeholder={SAMPLE_JD}
                 value={jobDescription}
-                onChange={(e) => setJobDescription(e.target.value)}
+                onChange={(event) => setJobDescription(event.target.value)}
               />
-              <div className="mt-4 flex justify-end">
-                <Button 
-                  onClick={handleAnalyse} 
-                  disabled={!jobDescription.trim() || !hasSelection || isAnalyzing}
-                >
-                  {isAnalyzing ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Analysing...
-                    </>
-                  ) : (
-                    <>
-                      <Search className="mr-2 h-4 w-4" />
-                      Analyse Match
-                    </>
-                  )}
-                </Button>
-              </div>
-            </Card>
-
-            {/* Results */}
-            {matchResult && (
-              <div className="animate-fade-in">
-                <h2 className="mb-4 text-lg font-semibold text-foreground">
-                  Match Analysis
-                </h2>
-                <JobMatchResults
-                  {...matchResult}
-                  isBuilding={isBuilding}
-                  onBuildTailored={selectedResumeId ? handleBuildTailored : undefined}
-                />
-              </div>
-            )}
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button onClick={() => void runMatch()} disabled={running || jobDescription.trim().length === 0}>
+                {running ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                    Reading the description...
+                  </>
+                ) : (
+                  "Show what this job asks for"
+                )}
+              </Button>
+              {report ? (
+                <span className="flex flex-wrap items-baseline gap-3 text-xs2 text-ink-3">
+                  <span>
+                    {report.job.title ?? "Untitled job"}
+                    {report.job.company ? ` at ${report.job.company}` : ""}
+                  </span>
+                  <Link
+                    to="/app/match/tailor"
+                    className="text-ink-2 underline-offset-4 hover:text-ink hover:underline"
+                  >
+                    Tailor a resume for this role
+                  </Link>
+                </span>
+              ) : null}
+            </div>
           </div>
-        </div>
-      </div>
+        </section>
 
-    </AppLayout>
+        {report ? (
+          <>
+            <section className="surface-card space-y-3 p-5" aria-label="Evidence levels">
+              <LevelCounters counts={report.requirementCounts} />
+              {proposalStage ? (
+                <p className="text-xs2 text-ink-3">
+                  <span className="font-medium text-ink">{proposalStage.headline}</span>{" "}
+                  {proposalStage.detail}
+                </p>
+              ) : null}
+            </section>
+
+            {isEmptyReport(report.requirementCounts) ? (
+              <div className="surface-card p-5">
+                <p className="section-title">No requirements were read from that description</p>
+                <p className="mt-2 text-sm text-ink-3">
+                  We found nothing to compare, which is not the same as a good match. Paste a
+                  description with a requirements section.
+                </p>
+              </div>
+            ) : (
+              <>
+                <RequirementList
+                  requirements={report.requirements}
+                  matchReportId={report.matchReportId}
+                  busyPotentialId={busyPotentialId}
+                  errors={rowErrors}
+                  onConfirm={(requirement) => void runDecision(requirement, "confirm")}
+                  onReject={(requirement) => void runDecision(requirement, "reject")}
+                />
+                <NamedGaps gaps={report.gaps} />
+                {suggestedProjects.length > 0 ? (
+                  <SuggestedProjects candidates={suggestedProjects} />
+                ) : null}
+              </>
+            )}
+
+            <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-rule pt-4">
+              <p className="text-sm text-ink">{INFERENCE_RULE}</p>
+              <div className="flex items-center gap-2 text-xs2 text-ink-3">
+                <EvidenceLevelBadge level="direct" />
+                <EvidenceLevelBadge level="contextual" />
+              </div>
+            </footer>
+            <p className="text-xs2 text-ink-3">
+              {report.confirmedClaimCount} confirmed statement
+              {report.confirmedClaimCount === 1 ? "" : "s"} were eligible to be evidence.{" "}
+              {report.notes}
+            </p>
+          </>
+        ) : (
+          <div className="surface-card p-5">
+            <p className="section-title">No report yet</p>
+            <p className="mt-2 text-sm text-ink-3">
+              Paste a job description above. You will get four counts and a list of named gaps -
+              no score, and nothing counted as your experience until you confirm it.
+            </p>
+          </div>
+        )}
+      </div>
+    </PageShell>
   );
 }

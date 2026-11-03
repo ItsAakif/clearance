@@ -1,5 +1,8 @@
-export { CoreExplanation } from "./CoreExplanation";
-export { FeatureShowcase } from "./FeatureShowcase";
-export { TemplatesSection } from "./TemplatesSection";
+export { LandingNav } from "./LandingNav";
+export { Hero } from "./Hero";
+export { FactsRow } from "./FactsRow";
+export { Features } from "./Features";
+export { HowItWorks } from "./HowItWorks";
+export { SelfHost } from "./SelfHost";
 export { ClosingCTA } from "./ClosingCTA";
-export { Footer } from "./Footer";
+export { LandingFooter } from "./LandingFooter";

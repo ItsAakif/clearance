@@ -11,16 +11,19 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
 
 interface ApiError {
   error: string;
+  code?: string;
   statusCode?: number;
 }
 
 class ApiClientError extends Error {
   statusCode: number;
-  
-  constructor(message: string, statusCode: number) {
+  code?: string;
+
+  constructor(message: string, statusCode: number, code?: string) {
     super(message);
     this.name = 'ApiClientError';
     this.statusCode = statusCode;
+    this.code = code;
   }
 }
 
@@ -70,7 +73,8 @@ async function request<T>(
     const errorData = data as ApiError;
     throw new ApiClientError(
       errorData.error || 'Request failed',
-      response.status
+      response.status,
+      errorData.code
     );
   }
   
@@ -78,16 +82,30 @@ async function request<T>(
 }
 
 /**
- * Upload a file
+ * Upload a file.
+ *
+ * `extraFields` is appended to the SAME FormData after the file, so an endpoint that
+ * needs a field alongside the upload (a `profileId`, a `title`) is one call rather than
+ * two. Existing callers pass neither and get exactly the previous body: the file is
+ * appended first, under `fieldName`, and nothing else is sent.
  */
 async function uploadFile<T>(
   endpoint: string,
   file: File,
-  fieldName: string = 'file'
+  fieldName: string = 'file',
+  extraFields?: Record<string, string | undefined>
 ): Promise<T> {
-  const formData = new FormData();
+  const formData: FormData = new FormData();
+  if (extraFields) {
+    for (const [key, value] of Object.entries(extraFields)) {
+      // An `undefined` value is SKIPPED, not appended as the string "undefined": the
+      // server's zod envelope treats an empty string as a supplied value, so appending a
+      // blank would turn "no title" into "title: ''".
+      if (typeof value === 'string') formData.append(key, value);
+    }
+  }
   formData.append(fieldName, file);
-  
+
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     method: 'POST',
     body: formData,
@@ -98,7 +116,7 @@ async function uploadFile<T>(
   const data = await response.json();
   
   if (!response.ok) {
-    throw new ApiClientError(data.error || 'Upload failed', response.status);
+    throw new ApiClientError(data.error || 'Upload failed', response.status, data.code);
   }
   
   return data;
@@ -115,13 +133,15 @@ async function downloadFile(endpoint: string): Promise<Blob> {
   
   if (!response.ok) {
     let errorMessage = 'Download failed';
+    let errorCode: string | undefined;
     try {
       const data = await response.json();
       errorMessage = data.error || errorMessage;
+      errorCode = typeof data.code === 'string' ? data.code : undefined;
     } catch {
       // Ignore JSON parse error
     }
-    throw new ApiClientError(errorMessage, response.status);
+    throw new ApiClientError(errorMessage, response.status, errorCode);
   }
   
   return response.blob();
@@ -142,13 +162,15 @@ async function downloadFilePost(endpoint: string, body: unknown): Promise<Blob> 
   
   if (!response.ok) {
     let errorMessage = 'Download failed';
+    let errorCode: string | undefined;
     try {
       const data = await response.json();
       errorMessage = data.error || errorMessage;
+      errorCode = typeof data.code === 'string' ? data.code : undefined;
     } catch {
       // Ignore JSON parse error
     }
-    throw new ApiClientError(errorMessage, response.status);
+    throw new ApiClientError(errorMessage, response.status, errorCode);
   }
   
   return response.blob();

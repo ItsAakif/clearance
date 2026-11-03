@@ -1,5 +1,6 @@
 // Resume Routes - CRUD, upload, export
 // Per security.md: Validate all input, enforce ownership
+// FROZEN (Clearance V2): legacy AI Resume Builder surface - no new features. See .planning/specs/clearance-v2/FREEZE.md
 
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
@@ -12,6 +13,16 @@ import { handleApiError, NotFoundError, BadRequestError, ForbiddenError } from '
 import { ensureOwnership } from '../shared/auth.js';
 import { validateInput, createResumeSchema, updateResumeSchema, createVariantSchema } from '../shared/validation.js';
 import { parseUploadedResume, parseUploadedResumeSmart } from '../resume/parser.js';
+// T1030 F10: the V2 cutover guard. Frozen file, ONE imported symbol and two middleware
+// insertions; see the module header for the decision and FREEZE.md sec. 5.2 item 3 for
+// why a security refusal is allowed on a frozen path.
+import {
+  LEGACY_EXPORT_REFUSED_STATUS,
+  isClearanceControlled,
+  legacyExportRefusal,
+  type LegacyExportResumeRef,
+} from '../resume/legacyExportGuard.js';
+import { RENDER_DEFAULT_TEMPLATE_ID, canonicalTemplateId } from '../render/templates.js';
 
 // Dynamic imports for docx (ESM/CJS compatibility)
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -27,6 +38,68 @@ const Docxtemplater = require('docxtemplater');
 const TEMPLATES_DIR = path.join(__dirname, '../../templates');
 
 const router = Router();
+
+// ---------------------------------------------------------------------------
+// T1030 F10 - the V2 cutover guard for the export/preview half of this file
+// ---------------------------------------------------------------------------
+//
+// Every legacy export and preview route runs one of these before it touches a template,
+// a browser, a template file or an output buffer. A V2 resume is a document under
+// clearance control (05 sec.6: rendering is gated on claim usage), and the generator
+// below is not that gate - it is the Letter/PDF pipeline that predates it. Rendering a
+// V2 resume here is the exact failure the whole derivation layer exists to prevent, and
+// it would happen under a green-looking 200.
+//
+// `refuseIfClearanceControlled` writes the refusal and returns; the handler then returns
+// early, which is why every call site is followed by `if (res.headersSent) return;`.
+
+/** Write a machine-readable refusal onto the response if the row is V2. */
+function refuseIfClearanceControlled(resume: LegacyExportResumeRef, res: Response): boolean {
+  if (!isClearanceControlled(resume)) return false;
+  res.status(LEGACY_EXPORT_REFUSED_STATUS).json(legacyExportRefusal(resume));
+  return true;
+}
+
+/**
+ * The `*-preview` routes render request-body `sections`, so there is no resume in the
+ * path. A preview is refused only when the caller NAMES the resume it is previewing
+ * (`body.resumeId`) and that resume is V2. A preview that names no resume is
+ * caller-supplied data with no V2 document behind it; refusing it would break the
+ * legacy builder for every user, including the ones on V1 rows, without closing a hole.
+ * Stated here rather than discovered later - this is the one place the decision is
+ * applied by ATTRIBUTION instead of by IDENTITY.
+ *
+ * N7: THE OWNERSHIP CHECK COMES FIRST, EXACTLY AS `routes/export.ts`'s twin does.
+ * Without it a caller could name another tenant's resume and read a 409 body carrying
+ * that row's `modelVersion` - so the refusal doubled as a cross-tenant oracle for the one
+ * fact the guard exists to protect. `ensureOwnership` throws `ForbiddenError` (403) and
+ * writes nothing, so a non-owner learns neither the version nor whether the row exists.
+ * The check is on OWNERSHIP, not on the version: answering 409 for a V1 row and 403 for a
+ * V2 one is itself the oracle.
+ */
+async function legacyPreviewGuard(req: Request, res: Response, next: () => void): Promise<void> {
+  try {
+    const body = (req.body ?? {}) as { resumeId?: unknown };
+    const resumeId = typeof body.resumeId === 'string' ? body.resumeId : null;
+    if (resumeId !== null) {
+      const resume = await prisma.resume.findUnique({
+        where: { id: resumeId },
+        select: { id: true, userId: true, modelVersion: true },
+      });
+      // An unknown id is NOT a refusal: the legacy builder's previews have never named a
+      // resume at all, so an unrecognised value is a client that is not using the V2
+      // attribution, and inventing a 404 for it would be a behaviour change rather than
+      // a safety refusal. A row that resolves and is V2 is refused.
+      if (resume) {
+        await ensureOwnership(req.user!.id, resume.userId, 'Resume');
+        if (refuseIfClearanceControlled(resume, res)) return;
+      }
+    }
+    next();
+  } catch (error) {
+    handleApiError(error, res);
+  }
+}
 
 // Configure multer for file uploads (5MB limit)
 const upload = multer({
@@ -146,7 +219,7 @@ router.post('/', requireAuth, async (req, res) => {
         skills: data.skills || [],
         projects: data.projects || undefined,
         sections: data.sections || DEFAULT_SECTIONS,
-        templateId: data.templateId || 'professional-standard',
+        templateId: canonicalTemplateId(data.templateId),
         templateSettings: data.templateSettings || DEFAULT_TEMPLATE_SETTINGS
       }
     });
@@ -254,7 +327,7 @@ router.post('/upload', requireAuth, upload.single('file'), async (req, res) => {
         projects: (parsedData.projects && parsedData.projects.length > 0) ? parsedData.projects : undefined,
         languages: (parsedData.languages && parsedData.languages.length > 0) ? parsedData.languages : undefined,
         sections: DEFAULT_SECTIONS,
-        templateId: 'professional-standard',
+        templateId: RENDER_DEFAULT_TEMPLATE_ID,
         templateSettings: DEFAULT_TEMPLATE_SETTINGS,
         originalFile: file.buffer,
         originalFileType: file.mimetype,
@@ -457,13 +530,14 @@ router.get('/:id/ats-reports', requireAuth, async (req, res) => {
 
     await ensureOwnership(req.user!.id, resume.userId, 'Resume');
 
+    // T1101: the same no-verdict rule as `routes/ats.ts`. `overallScore` and `status` are not even
+    // SELECTed, so this list of a resume's stored scans cannot serve a number or a grade. The rows
+    // keep them on disk (T1101: "ATSReport rows are not deleted - historical only").
     const reports = await prisma.aTSReport.findMany({
       where: { resumeId },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
-        overallScore: true,
-        status: true,
         createdAt: true,
         categories: true,
         keywords: true,
@@ -474,8 +548,6 @@ router.get('/:id/ats-reports', requireAuth, async (req, res) => {
     res.json(reports.map(report => ({
       id: report.id,
       resumeId,
-      overallScore: report.overallScore,
-      status: report.status,
       createdAt: report.createdAt,
       categories: report.categories,
       keywords: report.keywords,
@@ -487,7 +559,8 @@ router.get('/:id/ats-reports', requireAuth, async (req, res) => {
 });
 
 // ==================== EXPORT DOCX FROM DYNAMIC DATA (no auth required for preview) ====================
-router.post('/export/docx-preview', requireAuth, async (req, res) => {
+// T1030 F10 safety refusal - see the pdf-preview comment above and legacyExportGuard.ts.
+router.post('/export/docx-preview', requireAuth, legacyPreviewGuard, async (req, res) => {
   try {
     const { templateId, sections } = req.body;
     
@@ -524,7 +597,10 @@ router.post('/export/docx-preview', requireAuth, async (req, res) => {
 });
 
 // ==================== EXPORT PDF FROM DYNAMIC DATA (no auth required for preview) ====================
-router.post('/export/pdf-preview', requireAuth, async (req, res) => {
+// T1030 F10 safety refusal (see resume/legacyExportGuard.ts). A preview of a V2 resume is
+// refused with a machine-readable reason pointing at the gated V2 path; a preview of
+// caller-supplied data that names no V2 resume is unchanged.
+router.post('/export/pdf-preview', requireAuth, legacyPreviewGuard, async (req, res) => {
   try {
     const { sections } = req.body;
     
@@ -614,6 +690,10 @@ interface DynamicSectionData {
 }
 
 // ==================== EXPORT PDF ====================
+// T1030 F10: a V2 resume is refused here, before `generatePdf` is reached. See
+// resume/legacyExportGuard.ts for the decision and why a security refusal is permitted
+// on a frozen path (FREEZE.md sec. 5.2 item 3). A V1 resume reaches the generator
+// exactly as before.
 router.get('/:id/export/pdf', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -625,6 +705,8 @@ router.get('/:id/export/pdf', requireAuth, async (req, res) => {
     }
     
     await ensureOwnership(req.user!.id, resume.userId, 'Resume');
+    
+    if (refuseIfClearanceControlled(resume, res)) return;
     
     // Generate PDF
     const pdfBuffer = await generatePdf(resume as any);
@@ -641,6 +723,7 @@ router.get('/:id/export/pdf', requireAuth, async (req, res) => {
 });
 
 // ==================== EXPORT DOCX ====================
+// T1030 F10: the same refusal as `/:id/export/pdf`, before any template is read.
 router.get('/:id/export/docx', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -653,6 +736,8 @@ router.get('/:id/export/docx', requireAuth, async (req, res) => {
     }
     
     await ensureOwnership(req.user!.id, resume.userId, 'Resume');
+    
+    if (refuseIfClearanceControlled(resume, res)) return;
     
     // Determine which template to use
     const templateId = (templateParam as string) || resume.templateId || 'professional-standard';
@@ -888,7 +973,7 @@ function sanitizeFilename(name: string): string {
     .trim() || 'resume';
 }
 
-function createDocxDocument(resume: ResumeData): Document {
+function createDocxDocument(resume: ResumeData): InstanceType<typeof Document> {
   const personalInfo = resume.personalInfo as PersonalInfo;
   const experience = resume.experience as ExperienceItem[] || [];
   const education = resume.education as EducationItem[] || [];

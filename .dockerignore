@@ -1,0 +1,13 @@
+# Build context exclusions for the backend image.
+# NOTE: backend/prisma/migrations/**/migration.sql must NEVER be excluded -
+# migrations are required at runtime (`prisma migrate deploy` in compose).
+# Do not add a prisma/migrations exclusion in a later cleanup.
+node_modules
+backend/node_modules
+dist
+.git
+.planning
+.cache
+*.log
+.env*
+backend/.data

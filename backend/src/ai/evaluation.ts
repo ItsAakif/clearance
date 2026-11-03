@@ -11,6 +11,7 @@ import {
   type KeyRecord,
 } from './keyManager.js';
 import { getProviderModel, runLlmCompletion, createLlmClient, type LlmChatClient } from './providerModels.js';
+import { normalizeLocationPref } from '../shared/validation.js';
 import { checkLiveness } from '../jobSources/liveness.js';
 
 export interface ResumeLikeData {
@@ -31,7 +32,7 @@ export interface CareerProfileLike {
   minSalary?: number;
   maxSalary?: number;
   currency?: string;
-  locationPref?: string;
+  locationPref?: string | string[];
   remoteOnly?: boolean;
   summary?: string;
 }
@@ -82,6 +83,15 @@ CRITICAL RULES:
 - Be objective. Recommend "skip" if overallScore < 3.0 or isScam is true.
 - Respond with ONLY the JSON object.`;
 
+// Evaluator-boundary coercion for `locationPref` (T406, ADR-019).
+// Accepts a legacy plain string, a JSON-array string as stored in the
+// `String?` column, or a string array, and normalizes to the comma-joined
+// display shape the prompt has always used. A legacy single value renders
+// byte-identical to the previous `${profile.locationPref || 'n/a'}` line.
+export function formatLocationPrefForPrompt(value: string | string[] | null | undefined): string {
+  return normalizeLocationPref(value).join(', ');
+}
+
 function buildUserPrompt(resume: ResumeLikeData, jobDescription: string, research?: string, profile?: CareerProfileLike): string {
   const profileSection = profile ? `
 CANDIDATE CAREER PROFILE (use to calibrate scoring, do NOT invent):
@@ -90,7 +100,7 @@ CANDIDATE CAREER PROFILE (use to calibrate scoring, do NOT invent):
 - Top skills: ${profile.topSkills?.join(', ') || 'n/a'}
 - Preferred industries: ${profile.industries?.join(', ') || 'n/a'}
 - Salary range: ${profile.minSalary || profile.maxSalary ? `${profile.minSalary ?? '?'}–${profile.maxSalary ?? '?'} ${profile.currency || ''}`.trim() : 'n/a'}
-- Location preference: ${profile.locationPref || 'n/a'} ${profile.remoteOnly ? '(remote only)' : ''}
+- Location preference: ${formatLocationPrefForPrompt(profile.locationPref) || 'n/a'} ${profile.remoteOnly ? '(remote only)' : ''}
 - Red flags (penalize roles that match these): ${profile.redFlags?.join(', ') || 'n/a'}
 - Proof points (use for interview-prep STAR+R bullets): ${profile.proofPoints?.join(' | ') || 'n/a'}
 - Summary: ${profile.summary || 'n/a'}

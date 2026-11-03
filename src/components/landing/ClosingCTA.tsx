@@ -1,38 +1,31 @@
-import { Link } from "react-router-dom";
-import { motion } from "framer-motion";
-import { AnimatedButton } from "@/components/animations";
+import { appHref } from "@/lib/landingLinks";
 
-export const ClosingCTA = () => {
+export function ClosingCTA() {
   return (
-    <section className="border-t border-border bg-secondary/30 py-20 md:py-28">
-      <div className="mx-auto max-w-3xl px-6 text-center">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-100px" }}
-          transition={{ duration: 0.5 }}
+    <section
+      aria-labelledby="closing-title"
+      className="mx-auto w-full max-w-[1320px] px-6 py-24 text-center sm:px-8 md:py-28"
+    >
+      <h2
+        id="closing-title"
+        className="mx-auto max-w-3xl font-display text-[36px] font-medium leading-[1.1] tracking-[-0.02em] text-ink md:text-[48px]"
+      >
+        Start with the resume you already have.
+      </h2>
+      <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-5">
+        <a
+          href={appHref("/get-started")}
+          className="inline-flex h-11 items-center justify-center rounded-full bg-primary px-7 text-[15px] font-semibold text-primary-foreground transition-colors duration-150 ease-out hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
-          <h2 className="text-2xl font-semibold text-foreground md:text-3xl lg:text-4xl">
-            Start with your resume. We'll show you what works.
-          </h2>
-          <p className="mx-auto mt-4 max-w-lg text-muted-foreground">
-            Upload an existing resume or build from scratch - get instant ATS feedback either way.
-          </p>
-          
-          <div className="mt-10 flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
-            <AnimatedButton asChild variant="hero" size="lg" glowOnHover>
-              <Link to="/get-started">
-                Start building
-              </Link>
-            </AnimatedButton>
-            <AnimatedButton asChild variant="outline" size="lg">
-              <Link to="/get-started?upload=true">
-                Upload resume
-              </Link>
-            </AnimatedButton>
-          </div>
-        </motion.div>
+          Start building
+        </a>
+        <a
+          href="#self-hosting"
+          className="inline-flex min-h-[44px] items-center rounded-control text-[15px] font-medium text-ink-3 underline decoration-rule-strong underline-offset-4 transition-colors duration-150 ease-out hover:text-ink hover:decoration-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          or run it locally
+        </a>
       </div>
     </section>
   );
-};
+}

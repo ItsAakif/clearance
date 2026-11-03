@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils';
 import { useApplicationEvents, useUpdateApplication, useCreateApplicationEvent, useUpdateApplicationEvent } from '@/hooks/useJobs';
 import { ApplicationTimeline } from './ApplicationTimeline';
 import { ALL_APPLICATION_STATUSES, STATUS_LABELS } from './applicationConstants';
-import type { Application, ApplicationStatus, CreateApplicationEventInput, UpdateApplicationEventInput } from '@/services/api';
+import type { Application, ApplicationStatus, UpdateApplicationEventInput } from '@/services/api';
 
 interface Props {
   app: Application | null;
@@ -50,7 +50,7 @@ export function ApplicationDetailDialog({ app, onClose, onStatusChange, onSetRem
         type: 'follow_up',
         title: 'Follow-up reminder',
         scheduledAt: iso,
-      } as CreateApplicationEventInput);
+      });
     }
   };
 
@@ -64,7 +64,7 @@ export function ApplicationDetailDialog({ app, onClose, onStatusChange, onSetRem
         </DialogHeader>
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">{app.jobListing?.company} {app.jobListing?.location && `• ${app.jobListing?.location}`}</p>
+            <p className="text-sm text-ink-3">{app.jobListing?.company} {app.jobListing?.location && `• ${app.jobListing?.location}`}</p>
             {app.jobListing?.applyUrl && (
               <a href={app.jobListing.applyUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
                 View posting <ExternalLink className="h-3 w-3" />
@@ -84,13 +84,13 @@ export function ApplicationDetailDialog({ app, onClose, onStatusChange, onSetRem
           </div>
 
           <div className="space-y-1">
-            <label className="text-sm font-medium">Notes</label>
+            <label className="section-label block">Notes</label>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="min-h-[80px]" />
             <Button size="sm" onClick={handleNotesSave} disabled={updateApp.isPending}>Save notes</Button>
           </div>
 
           <div className="flex items-center gap-2">
-            <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+            <CalendarIcon className="h-4 w-4 text-ink-3" />
             <Input type="date" className="w-40" value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} />
             <Button size="sm" variant="outline" onClick={handleReminderSet} disabled={addEvent.isPending || !reminderDate}>
               {app.followUpAt ? 'Update reminder' : 'Set reminder'}
@@ -101,7 +101,7 @@ export function ApplicationDetailDialog({ app, onClose, onStatusChange, onSetRem
           </div>
 
           <div>
-            <h4 className="mb-2 text-sm font-medium">Timeline</h4>
+            <h4 className="section-label mb-2">Timeline</h4>
             {eventsError ? (
               <div className="space-y-2">
                 <p className="text-xs text-destructive">Failed to load events.</p>

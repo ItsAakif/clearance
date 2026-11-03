@@ -65,6 +65,9 @@ export function validateUploadedFile(
   filename: string
 ): void {
   // Check file size
+  if (!buffer || buffer.length === 0) {
+    throw new BadRequestError('File is empty. Upload a non-empty file.');
+  }
   if (buffer.length > MAX_FILE_SIZE) {
     throw new BadRequestError('File too large. Maximum size is 10MB.');
   }
@@ -90,11 +93,19 @@ export function validateUploadedFile(
 /**
  * Extract raw text from file without parsing structure.
  * Used as fallback for LLM evaluator when structured parsing fails.
+ *
+ * Never throws for empty or corrupt-but-allowed buffers: callers store the
+ * raw bytes regardless so the original file stays downloadable/viewable.
+ * An empty return only means "no extractable text" (surfaced as a warning
+ * by the upload route), never a reason to reject the upload.
  */
 export async function extractRawText(
   buffer: Buffer,
   mimeType: string
 ): Promise<string> {
+  if (!buffer || buffer.length === 0) {
+    return '';
+  }
   if (mimeType === 'application/pdf') {
     try {
       const pdfData = await pdfParse(buffer);
@@ -580,6 +591,31 @@ function extractLocation(text: string): string {
   return '';
 }
 
+/**
+ * The TECHNOLOGY-LINE label (T1053).
+ *
+ * The previous inline pattern at the "attach it to the project" branch was
+ * `/^technologies|tech|stack\s*:/i` - and because the alternation had NO GROUP it was read as
+ * `(^technologies)|(tech)|(stack\s*:)`, i.e. an UNANCHORED alternation. Two consequences
+ * followed from that one missing bracket:
+ *   - a `Tech:` line matched only by accident, through the bare `tech` substring alternative,
+ *     and the `\s*:` guard applied to the WRONG branch, so nothing required a colon; and
+ *   - any line merely CONTAINING `tech` anywhere ("We shipped fintech products", "mytech
+ *     stack") satisfied that test.
+ *
+ * It is ONE constant, used by BOTH sites that ask the question - "is this line a technology
+ * list?" (which decides whether a line starts a new project) and "attach it to the current
+ * project" - because those two drifting apart is precisely how the defect survived and then
+ * stayed invisible: with the sites holding DIFFERENT patterns, the one that asks the question
+ * was correct and masked the one that acted on the answer. One constant means they cannot
+ * disagree again, and it is what makes the Fintech case a live test rather than a comment.
+ *
+ * WHAT DID NOT CHANGE: the capture contract and the value split (`:,-`, then `.slice(1)`),
+ * which is why "scikit-learn" still splits into two entries. T1053 narrows the pattern and
+ * nothing else.
+ */
+const TECH_LINE_LABEL = /^(?:technologies|tech|stack)\s*:/i;
+
 function parseProjects(lines: string[]): ParsedResume['projects'] {
   const projects: ParsedResume['projects'] = [];
   let current: ParsedResume['projects'][0] | null = null;
@@ -589,7 +625,7 @@ function parseProjects(lines: string[]): ParsedResume['projects'] {
     // A project title is typically a standalone bold-ish line (no bullet, not a sub-detail line)
     if (bulletPattern.test(line)) {
       if (current) current.bullets.push(line.replace(bulletPattern, '').trim());
-    } else if (line.length > 2 && !/^(technologies|tech|stack)\s*:/i.test(line)) {
+    } else if (line.length > 2 && !TECH_LINE_LABEL.test(line)) {
       if (current) projects.push(current);
       current = {
         id: `proj-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -599,7 +635,7 @@ function parseProjects(lines: string[]): ParsedResume['projects'] {
         tech: [],
         bullets: []
       };
-    } else if (current && /^technologies|tech|stack\s*:/i.test(line)) {
+    } else if (current && TECH_LINE_LABEL.test(line)) {
       current.tech = line.split(/[:,-]/).slice(1).map(s => s.trim()).filter(Boolean);
     }
   }

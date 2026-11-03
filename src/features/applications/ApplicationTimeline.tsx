@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
-import { CalendarIcon } from 'lucide-react';
+import { CalendarIcon, RefreshCw, PenLine, Clock, CalendarDays, Award, XCircle, Ban, Circle, type LucideIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import type { Application, ApplicationEvent, CreateApplicationEventInput, UpdateApplicationEventInput } from '@/services/api';
@@ -21,14 +21,14 @@ interface Props {
   isSaving: boolean;
 }
 
-const EVENT_ICONS: Record<string, string> = {
-  status_change: '🔄',
-  note_added: '📝',
-  follow_up: '⏰',
-  interview_scheduled: '📅',
-  offer_received: '🎉',
-  rejected: '❌',
-  withdrawn: '🚫',
+const EVENT_ICONS: Record<string, LucideIcon> = {
+  status_change: RefreshCw,
+  note_added: PenLine,
+  follow_up: Clock,
+  interview_scheduled: CalendarDays,
+  offer_received: Award,
+  rejected: XCircle,
+  withdrawn: Ban,
 };
 
 export function ApplicationTimeline({ app, events, onAddEvent, onUpdateEvent, isSaving }: Props) {
@@ -66,23 +66,26 @@ export function ApplicationTimeline({ app, events, onAddEvent, onUpdateEvent, is
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <h4 className="text-sm font-medium">Timeline</h4>
+        <h4 className="section-label">Timeline</h4>
         <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>Add event</Button>
       </div>
       <div className="space-y-4">
-        {events.length === 0 && <p className="text-xs text-muted-foreground">No events yet.</p>}
+        {events.length === 0 && <p className="text-xs text-ink-3">No events yet.</p>}
         {events.map((ev) => (
           <div key={ev.id} className="flex gap-3">
             <div className="flex flex-col items-center">
-              <span className="text-lg">{EVENT_ICONS[ev.type] || '•'}</span>
-              <div className="mt-1 h-full w-px bg-border" />
+              {(() => {
+                const EventIcon = EVENT_ICONS[ev.type] ?? Circle;
+                return <EventIcon className="h-4 w-4 text-ink-3" aria-hidden="true" />;
+              })()}
+              <div className="mt-1 h-full w-px bg-rule" />
             </div>
             <div className="flex-1 pb-4">
-              <p className="text-sm font-medium text-foreground">
+              <p className="text-sm font-medium text-ink">
                 {ev.type === 'status_change' ? `Status changed to ${ev.toStatus || 'unknown'}` : ev.title || ev.type.replace(/_/g, ' ')}
               </p>
-              {ev.description && <p className="mt-0.5 text-xs text-muted-foreground whitespace-pre-wrap">{ev.description}</p>}
-              <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+              {ev.description && <p className="mt-0.5 text-xs text-ink-3 whitespace-pre-wrap">{ev.description}</p>}
+              <div className="mt-1 flex items-center gap-2 text-xs text-ink-3">
                 <span>{format(new Date(ev.createdAt), 'PP')}</span>
                 {ev.scheduledAt && <span>Scheduled: {format(new Date(ev.scheduledAt), 'PP')}</span>}
                 {ev.type !== 'status_change' && (
@@ -116,7 +119,7 @@ export function ApplicationTimeline({ app, events, onAddEvent, onUpdateEvent, is
             {requiresScheduled && (
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className={cn('w-full justify-start text-left font-normal', !scheduledAt && 'text-muted-foreground')}>
+                  <Button variant="outline" className={cn('w-full justify-start text-left font-normal', !scheduledAt && 'text-ink-3')}>
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {scheduledAt ? format(scheduledAt, 'PPP') : 'Pick a date'}
                   </Button>

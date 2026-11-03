@@ -115,6 +115,33 @@ describe('application events routes', () => {
   });
 });
 
+describe('application detail exposes the resume and listing facts the workspace needs', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUserId.value = 'user-1';
+    prismaMocks.application.findUnique.mockResolvedValue({
+      ...ownerApp,
+      jobListingId: 'job-listing-1',
+      tailoredResume: { id: 'tr-1', title: 'Tailored', templateId: 'typst-ats-classic', sourceResumeId: 'resume-1' },
+      jobListing: { title: 'Engineer', company: 'Acme', location: 'Remote' },
+    });
+  });
+
+  it('selects the tailored resume sourceResumeId and the listing searchDocument', async () => {
+    const res = await request(makeApp()).get('/app-1');
+    expect(res.status).toBe(200);
+    expect(prismaMocks.application.findUnique).toHaveBeenCalledWith({
+      where: { id: 'app-1' },
+      include: {
+        jobListing: { select: expect.objectContaining({ searchDocument: true }) },
+        tailoredResume: { select: expect.objectContaining({ sourceResumeId: true }) },
+      },
+    });
+    // Read-only plumbing: the value the UI resolves the resume from is the one the row holds.
+    expect(res.body.tailoredResume.sourceResumeId).toBe('resume-1');
+  });
+});
+
 describe('application withdrawn/ghosted transitions', () => {
   beforeEach(() => {
     vi.clearAllMocks();

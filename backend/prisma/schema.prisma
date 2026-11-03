@@ -1,5 +1,9 @@
 // Clearance Database Schema
 // PostgreSQL with Prisma ORM
+// Pooling note: hosted poolers terminate idle sockets (FATAL 57P01). The
+// runtime client (src/lib/prisma.ts) appends small-pool defaults
+// (connection_limit=2, pool_timeout=20, connect_timeout=10) to DATABASE_URL
+// and retries once per query, so keep this datasource as env("DATABASE_URL").
 
 datasource db {
   provider = "postgresql"
@@ -65,6 +69,16 @@ model User {
   savedSearches   SavedSearch[]
   questionAnswers QuestionAnswer[]
   jobAlerts       JobAlert[]
+
+  // ==================== V2 CAREER EVIDENCE LAYER (back-relations only) ====================
+  // No DDL: every field here is a reverse relation to a NEW model, so adding it creates
+  // no column and no constraint on "User".
+  evidenceVerifications ClaimVerification[]
+  jobs                  Job[]
+  matchReports          MatchReport[]
+  interviewRisks        InterviewRisk[]
+  interviewQuestions    InterviewQuestion[]
+  projectOpportunities  ProjectOpportunity[]
 }
 
 // ==================== RESUME ====================
@@ -94,14 +108,42 @@ model Resume {
   originalFile     Bytes?
   originalFileType String?
 
+  // ==================== V2 CAREER EVIDENCE LAYER (additive) ====================
+  // Every column below is either nullable or carries a default, so existing legacy
+  // rows keep working unchanged: modelVersion = 1 means "legacy builder shape"
+  // (personalInfo/summary/experience/... Json columns), 2 means "Resume JSON projection".
+  // Legacy `templateId` default is deliberately NOT changed from 'classic' - the frozen
+  // legacy builder still creates rows with it. ResumeTemplate ids are a separate
+  // registry namespace.
+  modelVersion  Int            @default(1) // 1 = legacy builder shape; 2 = Resume JSON
+  kind          String         @default("master") // "master" | "variant"
+  profileId     String? // the profile it derives from (null for legacy rows)
+  profile       CareerProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  variantOfId   String?
+  variantOf     Resume?        @relation("ResumeVariantSelf", fields: [variantOfId], references: [id], onDelete: SetNull)
+  childVariants Resume[]       @relation("ResumeVariantSelf")
+  targetJobId   String? // the job this variant targets
+  pageSize      PageSize       @default(a4)
+  themeSettings Json           @default("{}")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // LEGACY / ARCHIVED relations - untouched by V2. `variants` keeps pointing at
+  // ResumeVariant because backend/src/routes/resume.ts includes it by that name.
   variants   ResumeVariant[]
   atsReports ATSReport[]
   jobMatches JobMatch[]
 
+  revisions    ResumeRevision[]
+  documents    ResumeDocument[]
+  matchReports MatchReport[]
+  risks        InterviewRisk[]
+
   @@index([userId])
+  @@index([userId, isArchived])
+  @@index([profileId])
+  @@index([variantOfId])
 }
 
 model ResumeVariant {
@@ -191,6 +233,14 @@ model Template {
   isActive        Boolean @default(true)
 
   createdAt DateTime @default(now())
+
+  // ==================== V2 (additive; legacy rows keep working via defaults) ====================
+  // Long term ResumeTemplate supersedes Template. Template is NOT deleted in V2
+  // (see 05 sec.7) - its rows stay readable and its new columns default to the
+  // legacy behaviour (html engine, letter page size).
+  engine   TemplateEngine @default(html)
+  pageSize PageSize       @default(letter)
+  licence  String?
 }
 
 // ==================== CAREER PROFILE & JOB BOARDS ====================
@@ -212,6 +262,25 @@ model CareerProfile {
   proofPoints        Json?
   summary            String?
   parsedFromResumeId String?
+
+  // ==================== V2 CAREER EVIDENCE LAYER (nullable-only) ====================
+  // Existing columns (targetRoles/seniority/.../proofPoints) are KEPT unchanged.
+  headline String?
+  country  String? // ISO code, for a future extensive A4 template set
+  links    Json?
+
+  // Back-relations to NEW models - no DDL change on CareerProfile itself.
+  sources              EvidenceSource[]
+  experiences          Experience[]
+  educations           Education[]
+  projects             Project[]
+  skills               Skill[]
+  certifications       Certification[]
+  achievements         Achievement[]
+  claims               CareerClaim[]
+  resumes              Resume[]
+  matchReports         MatchReport[]
+  projectOpportunities ProjectOpportunity[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -270,6 +339,7 @@ model SavedSearch {
   sortBy        String    @default("relevance")
   lastRunAt     DateTime?
   matchCount    Int       @default(0)
+  intent        Json?
   createdAt     DateTime  @default(now())
 
   @@index([userId])
@@ -296,20 +366,37 @@ model AIProviderKey {
 
 // ==================== JOB DISCOVERY & TRACKING ====================
 model JobListing {
-  id             String    @id @default(uuid())
-  externalId     String?
-  source         String
-  sourceUrl      String
-  title          String
-  company        String
-  location       String?
-  description    String    @db.Text
-  applyUrl       String?
-  postedAt       DateTime?
-  expiresAt      DateTime?
-  isActive       Boolean   @default(true)
-  lastVerifiedAt DateTime?
-  createdAt      DateTime  @default(now())
+  id                String    @id @default(uuid())
+  externalId        String?
+  source            String
+  sourceUrl         String
+  title             String
+  company           String
+  location          String?
+  description       String    @db.Text
+  descriptionMd     String?   @db.Text
+  descriptionMdHash String?
+  descriptionMdAt   DateTime?
+  applyUrl          String?
+  postedAt          DateTime?
+  postedAtSource    String?
+  postedAtRaw       String?
+  firstSeenAt       DateTime?
+  dateConfidence    String?
+  canonicalKey      String?
+  expiresAt         DateTime?
+  isActive          Boolean   @default(true)
+  lastVerifiedAt    DateTime?
+  createdAt         DateTime  @default(now())
+
+  // ==================== CATALOGUE BROWSE (derived, additive) ====================
+  // `searchDocument` is the derived wire shape (see src/search/document.ts); it
+  // IS what GET /jobs/catalogue returns, so a result page needs no joins.
+  // Nullable: existing rows backfill on demand (scripts/backfill-search-documents.ts).
+  // `searchUpdatedAt` stamps the last derivation. Both are written by the
+  // backfill/refresh service, never by discovery.
+  searchDocument  Json?
+  searchUpdatedAt DateTime?
 
   evaluations  JobEvaluation[]
   applications Application[]
@@ -317,6 +404,11 @@ model JobListing {
   @@unique([source, externalId])
   @@index([company])
   @@index([isActive, postedAt])
+  @@index([canonicalKey])
+  // Supports JSONB containment/array filters (e.g. skills ?| ARRAY[...]).
+  // The companion full-text expression index lives only in the migration:
+  // Prisma cannot represent an expression index, and ignores it on diff.
+  @@index([searchDocument], type: Gin, map: "JobListing_searchDocument_gin_idx")
 }
 
 model JobEvaluation {
@@ -419,6 +511,7 @@ model JobAlert {
   lastMatchCount Int       @default(0)
   notifyInApp    Boolean   @default(true)
   notifyEmail    Boolean   @default(false)
+  intent         Json?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -449,4 +542,772 @@ model AppSetting {
   key       String   @unique
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// ==================== COMPANY REGISTRY (Wave 2, ADR-026) ====================
+// Global, read-mostly registry data: no userId, no ownership checks (ADR-026/ADR-030).
+model Company {
+  id                String   @id @default(uuid())
+  slug              String   @unique
+  name              String
+  websiteUrl        String?
+  hqCountry         String?
+  industries        Json?
+  registrySource    String
+  registryLicense   String
+  registrySourceRef String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  careerPages CompanyCareerPage[]
+
+  @@index([name])
+  @@index([registrySource])
+}
+
+model CompanyCareerPage {
+  id            String    @id @default(uuid())
+  companyId     String
+  company       Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  url           String    @unique
+  host          String
+  provider      String?
+  boardToken    String?
+  tier          Int
+  isActive      Boolean   @default(true)
+  // verifyStatus: unverified | ok | empty | blocked | http_error | timeout | invalid | skipped
+  verifyStatus  String    @default("unverified")
+  verifyMethod  String?
+  verifiedAt    DateTime?
+  lastCheckedAt DateTime?
+  httpStatus    Int?
+  resultCount   Int       @default(0)
+  failureCount  Int       @default(0)
+  nextCheckAt   DateTime?
+  lastError     String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([provider, boardToken])
+  @@index([isActive, tier, nextCheckAt])
+  @@index([isActive, tier, id])
+}
+
+// =====================================================================================
+// ==================== CLEARANCE V2 - CAREER EVIDENCE LAYER (T1010) ======================
+// =====================================================================================
+// Source: .planning/specs/clearance-v2/05-canonical-model.md sec.4 + sec.5, with the
+// naming correction from sec.7 item 5 applied: the NEW match model is `MatchReport`.
+// The legacy `JobMatch` table (keyword match rows read by Build.tsx / job-match.ts)
+// is NOT renamed, NOT extended and NOT dropped.
+//
+// INVARIANT (ADR-036): AI inference is never user-confirmed experience. What the
+// database itself can enforce is enforced here:
+//   1. `status` and `provenance` are real enums, so an AI writer cannot emit a value
+//      outside the closed vocabulary.
+//   2. @@unique([profileId, fingerprint]) makes re-observation idempotent: an LLM that
+//      re-extracts the same statement cannot create a duplicate row, therefore it
+//      cannot create a second, "upgraded" twin of an already-rejected/confirmed claim.
+//      Re-extraction hits the unique key and can only refresh confidence/evidence.
+//   3. `confidence` is a Float? and is never part of any uniqueness rule, so a
+//      confidence bump alone cannot change status.
+//   4. `user_confirmed` requires a ClaimVerification row with action IN (confirm,
+//      edit_confirm) and a non-null actorUserId. Prisma cannot express that
+//      declaratively (05 sec.8); the column layout below makes it the only viable
+//      shape and a service-layer guard + trigger own the enforcement.
+//   5. Rejected is terminal-ish: only a user `reopen` clears it.
+//
+// ADR-041 D2: no binary column anywhere in this layer. Bytes live behind the storage
+// abstraction; the database stores storageKey + byteSize + mimeType + hash only.
+// =====================================================================================
+
+// ==================== ENUMS (05 sec.4) ====================
+
+enum ClaimStatus {
+  inferred // produced by AI/derivation; NOT usable in a rendered resume
+  contextual // AI/derivation saw corroborating context; still NOT confirmed
+  user_confirmed // ONLY settable together with a ClaimVerification(confirm|edit_confirm)
+  rejected // user rejected; AI may not resurrect without a reopen
+  superseded // replaced by a newer claim (points to replacement)
+}
+
+enum ClaimProvenance {
+  user_entered
+  document_import // extracted from an uploaded resume/notes file
+  llm_inferred // model produced it
+  derived // deterministic composition of confirmed facts
+  github_derived // from a public repo / API (project engine)
+  external_verified // e.g. a certification URL verified out-of-band
+}
+
+enum ClaimKind {
+  role
+  responsibility
+  achievement
+  metric
+  skill
+  technology
+  domain
+  education
+  certification
+  project
+  language
+  soft_skill
+}
+
+enum EvidenceKind {
+  document // pdf/docx/txt upload
+  url
+  manual
+  import_json // imported JSON Resume
+  github_repo
+  job_posting
+}
+
+enum VerificationAction {
+  confirm
+  edit_confirm
+  reject
+  reopen
+  edit // edit without status change (recorded, does not confirm)
+}
+
+enum VerificationTarget {
+  career_claim
+  potential_match
+  job_requirement_match
+}
+
+enum ResumeUsage {
+  verbatim
+  tailored
+  omitted
+}
+
+enum ResumeChangeOp {
+  rewrite_bullet
+  reword_summary
+  reorder
+  include
+  exclude
+  add_skill
+  remove_skill
+  retitle
+  customize_style
+}
+
+enum ResumeChangeSource {
+  user
+  tailoring_engine
+  import
+  migration
+}
+
+enum RenderFormat {
+  pdf
+  docx
+  tex
+  typ
+  json
+  svg
+}
+
+enum TemplateEngine {
+  typst
+  latex
+  html // legacy export path
+}
+
+enum PageSize {
+  a4
+  letter
+}
+
+enum RequirementKind {
+  responsibility
+  required_skill
+  preferred_skill
+  technology
+  domain
+  education
+  years_experience
+  soft_skill
+  screening_criterion
+  terminology
+}
+
+enum RequirementImportance {
+  must
+  should
+  nice
+}
+
+enum EvidenceLevel {
+  direct // a confirmed claim states exactly this requirement
+  contextual // a confirmed claim implies it (same domain/stack, adjacent work)
+  potential // plausible from the profile but no confirming claim; needs confirmation
+  unsupported // no evidence; a named gap
+}
+
+enum InterviewRiskKind {
+  new_claim
+  emphasized_tech
+  inferred_claim
+  rewritten_bullet
+  gap
+  overclaim
+  thin_evidence
+}
+
+enum Severity {
+  low
+  medium
+  high
+}
+
+enum ProjectStatus {
+  proposed
+  accepted
+  in_progress
+  completed
+  abandoned
+}
+
+enum ReferenceKind {
+  github_repo
+  article
+  docs
+  package
+  example_project
+}
+
+// ==================== CAREER EVIDENCE LAYER (NEW) ====================
+
+model EvidenceSource {
+  id             String        @id @default(uuid())
+  profileId      String
+  profile        CareerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  kind           EvidenceKind
+  title          String
+  url            String?
+  mimeType       String?
+  // ADR-041 D2: bytes live in the storage abstraction, NEVER in Postgres
+  storageKey     String? // storage abstraction object key (dev: filesystem/Docker volume)
+  byteSize       Int? // size of the stored object (metadata only)
+  uploadedFileId String? // link to existing [UploadedFile] (soft link, no FK: legacy table)
+  contentHash    String // sha256 of normalized text; dedupe key
+  extractedText  String?       @db.Text
+  trustLevel     Int           @default(1) // informational only
+  capturedAt     DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+
+  claims CareerClaim[]
+
+  @@unique([profileId, contentHash])
+  @@index([profileId, kind])
+}
+
+model Experience {
+  id             String        @id @default(uuid())
+  profileId      String
+  profile        CareerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title          String
+  company        String
+  location       String?
+  employmentType String?
+  startDate      String? // free text (matches today's model); ISO normalization is a nicety
+  endDate        String?
+  current        Boolean       @default(false)
+  sortOrder      Int           @default(0)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  claims CareerClaim[]
+
+  @@index([profileId])
+}
+
+model Education {
+  id             String        @id @default(uuid())
+  profileId      String
+  profile        CareerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  degree         String
+  field          String?
+  institution    String
+  location       String?
+  graduationYear String?
+  sortOrder      Int           @default(0)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  claims CareerClaim[]
+
+  @@index([profileId])
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  profileId   String
+  profile     CareerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  name        String
+  role        String?
+  description String?       @db.Text
+  repoUrl     String?
+  liveUrl     String?
+  tech        Json          @default("[]")
+  startDate   String?
+  endDate     String?
+  sortOrder   Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  claims     CareerClaim[]
+  references ProjectReference[] @relation("ProjectRefToProject")
+
+  @@index([profileId])
+}
+
+model Skill {
+  id         String        @id @default(uuid())
+  profileId  String
+  profile    CareerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  name       String
+  normalized String // lowercase canonical key for matching
+  category   String? // "language" | "framework" | ... free text
+  level      String? // "beginner".."expert" (display only)
+  sortOrder  Int           @default(0)
+
+  claims CareerClaim[]
+
+  @@unique([profileId, normalized])
+  @@index([profileId])
+}
+
+model Certification {
+  id            String        @id @default(uuid())
+  profileId     String
+  profile       CareerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  name          String
+  issuer        String?
+  issuedOn      String?
+  expiresOn     String?
+  credentialUrl String?
+  createdAt     DateTime      @default(now())
+
+  claims CareerClaim[]
+
+  @@index([profileId])
+}
+
+model Achievement {
+  id           String        @id @default(uuid())
+  profileId    String
+  profile      CareerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  statement    String        @db.Text
+  experienceId String?
+  sortOrder    Int           @default(0)
+  createdAt    DateTime      @default(now())
+
+  claims CareerClaim[]
+
+  @@index([profileId])
+}
+
+/// The heart of the model: every atomic career fact, with its status and provenance.
+/// This is the ONLY writer of career facts; Resume* tables reference claims and never
+/// mutate them (05 sec.3 rule, sec.6 non-mutation guarantees).
+model CareerClaim {
+  id        String        @id @default(uuid())
+  profileId String
+  profile   CareerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  kind        ClaimKind
+  statement   String    @db.Text // the atomic assertion, in plain language
+  // stable hash(kind + normalized statement). The unique key below is what makes
+  // re-extraction idempotent and forbids an "upgraded twin" of a rejected claim.
+  fingerprint String
+
+  // optional attachment to an entity (exactly one of these may be set)
+  experienceId    String?
+  experience      Experience?    @relation(fields: [experienceId], references: [id], onDelete: SetNull)
+  educationId     String?
+  education       Education?     @relation(fields: [educationId], references: [id], onDelete: SetNull)
+  projectId       String?
+  project         Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  skillId         String?
+  skill           Skill?         @relation(fields: [skillId], references: [id], onDelete: SetNull)
+  certificationId String?
+  certification   Certification? @relation(fields: [certificationId], references: [id], onDelete: SetNull)
+  achievementId   String?
+  achievement     Achievement?   @relation(fields: [achievementId], references: [id], onDelete: SetNull)
+
+  status          ClaimStatus     @default(inferred)
+  provenance      ClaimProvenance
+  confidence      Float? // producer belief 0..1; NEVER written by a user action, NEVER changes status
+  inferenceMethod String? // e.g. "jd_extract" | "resume_import" | "github"
+  producedByModel String? // provider/model id, no secrets
+
+  evidenceSourceId String?
+  evidenceSource   EvidenceSource? @relation(fields: [evidenceSourceId], references: [id], onDelete: SetNull)
+
+  supersedesClaimId String?
+  supersedes        CareerClaim?  @relation("ClaimSupersede", fields: [supersedesClaimId], references: [id], onDelete: SetNull)
+  supersededBy      CareerClaim[] @relation("ClaimSupersede")
+
+  confirmedAt    DateTime?
+  rejectedAt     DateTime?
+  rejectedReason String?
+
+  jobRelevance Json? // optional cached relevance per job/requirement
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  verifications    ClaimVerification[] @relation("ClaimVerif")
+  usages           ResumeClaimUsage[]
+  potentialMatches PotentialMatch[]
+
+  @@unique([profileId, fingerprint])
+  @@index([profileId, status])
+  @@index([profileId, kind])
+  @@index([evidenceSourceId])
+  @@index([status, kind])
+}
+
+// Append-only audit of every human decision. Polymorphic target so one table covers
+// claim confirmations and match confirmations. `claimId` is the typed shortcut; the
+// (targetType, targetId) pair is the authoritative polymorphic key.
+model ClaimVerification {
+  id          String             @id @default(uuid())
+  userId      String
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetType  VerificationTarget
+  targetId    String
+  action      VerificationAction
+  actorUserId String // same as user in the singleton app; kept explicit
+  before      Json?
+  after       Json?
+  note        String?
+  createdAt   DateTime           @default(now())
+
+  claim   CareerClaim? @relation("ClaimVerif", fields: [claimId], references: [id], onDelete: Cascade)
+  claimId String?
+
+  @@index([targetType, targetId])
+  @@index([userId, createdAt])
+  @@index([claimId])
+}
+
+// ==================== JOB ANALYSIS LAYER (NEW) ====================
+// Job is a NEW wrapper. It READS JobListing (discovery, read-only) or raw text.
+// It NEVER writes JobListing, and never adds a constraint to it.
+
+model Job {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Link to discovery output. Plain string, no FK: JobListing is a frozen read-only
+  // discovery table and V2 must not add constraints to it.
+  jobListingId String? // discovery output (read-only)
+  sourceKind   String // "discovery" | "pasted_text" | "uploaded_pdf" | "url"
+  sourceUrl    String?
+  rawText      String    @db.Text
+  contentHash  String
+  title        String?
+  company      String?
+  seniority    String?
+  domain       String?
+  analyzedAt   DateTime?
+  analysisJson Json? // structured analysis snapshot (versioned)
+
+  requirements  JobRequirement[]
+  matchReports  MatchReport[]
+  risks         InterviewRisk[]
+  opportunities ProjectOpportunity[]
+  createdAt     DateTime             @default(now())
+
+  @@unique([userId, contentHash])
+  @@index([userId, createdAt])
+}
+
+model JobRequirement {
+  id            String                @id @default(uuid())
+  jobId         String
+  job           Job                   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  kind          RequirementKind
+  importance    RequirementImportance @default(should)
+  text          String                @db.Text
+  normalizedKey String // canonical key for matching/evidence joins
+  weight        Float                 @default(1) // display weight, not a score component
+  provenance    ClaimProvenance       @default(llm_inferred) // jd_explicit vs inferred
+  createdAt     DateTime              @default(now())
+
+  potentialMatches PotentialMatch[]
+
+  @@index([jobId, importance])
+  @@index([normalizedKey])
+}
+
+/// The NEW match report. 05 sec.7 item 5: this is the model the spec drafted as
+/// "JobMatch"; it is named MatchReport so the legacy JobMatch table is left alone.
+/// DELIBERATELY NO "score" COLUMN. Counts + named lists only.
+model MatchReport {
+  id        String        @id @default(uuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId     String
+  job       Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  profileId String
+  profile   CareerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  resumeId  String?
+  resume    Resume?       @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+
+  // DELIBERATELY NO "score" COLUMN. Counts + named lists only.
+  directCount       Int      @default(0)
+  contextualCount   Int      @default(0)
+  potentialCount    Int      @default(0)
+  unsupportedCount  Int      @default(0)
+  totalRequirements Int      @default(0)
+  gaps              Json     @default("[]") // [{ requirementId, normalizedKey, text, kind }]
+  createdAt         DateTime @default(now())
+
+  potentialMatches PotentialMatch[]
+  risks            InterviewRisk[]
+
+  @@unique([jobId, resumeId])
+  @@index([userId, createdAt])
+  @@index([resumeId])
+}
+
+model PotentialMatch {
+  id            String         @id @default(uuid())
+  matchReportId String
+  matchReport   MatchReport    @relation(fields: [matchReportId], references: [id], onDelete: Cascade)
+  requirementId String
+  requirement   JobRequirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  claimId       String? // the supporting claim, if any
+  claim         CareerClaim?   @relation(fields: [claimId], references: [id], onDelete: SetNull)
+
+  level            EvidenceLevel // direct|contextual|potential (never unsupported here)
+  proposedEvidence String        @db.Text // what we think the user did, in plain language
+  rationale        String        @db.Text
+  status           String        @default("pending") // "pending" | "confirmed" | "rejected"
+  resolvedAt       DateTime?
+  createdAt        DateTime      @default(now())
+
+  @@index([matchReportId, status])
+  @@index([requirementId])
+  @@index([claimId])
+}
+
+// ==================== RESUME DERIVATION LAYER (NEW) ====================
+
+model ResumeTemplate {
+  id                String         @id // e.g. "typst-ats-classic"
+  name              String
+  category          String
+  // The template's OWN version, the same value as `version` in the template's
+  // metadata.json (T1040 asserts the two agree, so an edit without a bump fails the
+  // registry). The determinism cache key needs it: without it a template edit would
+  // silently reuse the artifact rendered from the previous source.
+  version           String         @default("1.0.0")
+  engine            TemplateEngine
+  engineVersionPins Json           @default("{}")
+  pageSize          PageSize       @default(a4)
+  columns           Int            @default(1)
+  maxPages          Int?
+  supportedSections Json           @default("[]")
+  requiredDictKeys  Json           @default("[]")
+  fonts             Json           @default("[]") // [{family,files,licence}]
+  packages          Json           @default("[]") // [{import,licence}]
+  licence           String
+  attribution       String?
+  atsProfile        Json           @default("{}")
+  thumbnail         String?
+  isActive          Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([isActive, category])
+}
+
+model ResumeRevision {
+  id              String             @id @default(uuid())
+  resumeId        String
+  resume          Resume             @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  revisionNumber  Int // 1..N; current = max
+  resumeJson      Json // JSON Resume + x-clearance snapshot (immutable)
+  jsonHash        String
+  enginePins      Json               @default("{}") // typst/latex versions at authoring time
+  createdBy       ResumeChangeSource
+  createdByUserId String?
+  reason          String?
+  createdAt       DateTime           @default(now())
+
+  changes   ResumeChange[]
+  usages    ResumeClaimUsage[]
+  documents ResumeDocument[]
+
+  @@unique([resumeId, revisionNumber])
+  @@index([resumeId, createdAt])
+}
+
+model ResumeChange {
+  id                   String             @id @default(uuid())
+  revisionId           String
+  revision             ResumeRevision     @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  op                   ResumeChangeOp
+  jsonPath             String // e.g. "work[0].highlights[2]"
+  before               Json?
+  after                Json?
+  reason               String? // target + reason for tailoring ops
+  targetRequirementIds Json               @default("[]")
+  sourceClaimIds       Json               @default("[]")
+  appliedBy            ResumeChangeSource
+  accepted             Boolean            @default(true)
+  createdAt            DateTime           @default(now())
+
+  @@index([revisionId, op])
+}
+
+// Which claims a revision used, and how. THIS is what gates rendering:
+// a pre-render validator refuses a revision whose usage IN (verbatim, tailored)
+// points at a claim whose status != user_confirmed.
+model ResumeClaimUsage {
+  id           String         @id @default(uuid())
+  revisionId   String
+  revision     ResumeRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  claimId      String
+  claim        CareerClaim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  usage        ResumeUsage
+  renderedText String?        @db.Text // the exact text that will appear (verbatim or tailored)
+  createdAt    DateTime       @default(now())
+
+  @@unique([revisionId, claimId])
+  @@index([claimId])
+}
+
+// Rendered artifact METADATA only. ADR-041 D2: the bytes live behind the storage
+// abstraction (filesystem/Docker volume in dev, S3-compatible later), never in Postgres.
+model ResumeDocument {
+  id              String         @id @default(uuid())
+  revisionId      String
+  revision        ResumeRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  // Denormalized owner for the direct Resume -> ResumeDocument relation the spec's
+  // ER diagram declares (05 sec.3). Nullable: derivable from revision, never required.
+  resumeId        String?
+  resume          Resume?        @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  format          RenderFormat
+  templateId      String
+  // The ResumeTemplate.version that produced these bytes. NULLABLE on purpose: null
+  // means "this row makes no cache claim" and is always treated as a MISS, so no
+  // pre-existing row is silently reinterpreted and no stale artifact can be served.
+  templateVersion String?
+  engineVersion   String?
+  pageCount       Int?
+  hash            String // sha256 of the exact artifact bytes
+  storageKey      String // ADR-041 D2: storage abstraction key, NOT the bytes
+  byteSize        Int // metadata only - never the bytes themselves
+  mimeType        String
+  createdAt       DateTime       @default(now())
+
+  @@unique([revisionId, format, templateId])
+  @@index([revisionId])
+  @@index([resumeId])
+}
+
+// ==================== INTERVIEW + PROJECT (NEW) ====================
+
+model InterviewRisk {
+  id            String       @id @default(uuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resumeId      String
+  resume        Resume       @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  matchReportId String?
+  matchReport   MatchReport? @relation(fields: [matchReportId], references: [id], onDelete: SetNull)
+  // Direct job link for the Job -> InterviewRisk relation the spec's ER diagram
+  // declares (05 sec.3). Nullable: a risk may exist without a stored Job.
+  jobId         String?
+  job           Job?         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  requirementId String?
+  claimId       String?
+
+  kind         InterviewRiskKind
+  severity     Severity
+  statement    String            @db.Text
+  evidenceRefs Json              @default("[]") // claimId[] + evidenceSourceId[]
+  createdAt    DateTime          @default(now())
+
+  questions InterviewQuestion[]
+
+  @@index([resumeId, severity])
+  @@index([matchReportId])
+  @@index([jobId])
+}
+
+model InterviewQuestion {
+  id               String         @id @default(uuid())
+  userId           String
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  riskId           String?
+  risk             InterviewRisk? @relation(fields: [riskId], references: [id], onDelete: Cascade)
+  jobId            String?
+  category         String // behavioral|technical|situational|general
+  question         String         @db.Text
+  modelAnswer      String         @db.Text // MUST cite only groundedClaimIds
+  groundedClaimIds Json           @default("[]")
+  createdAt        DateTime       @default(now())
+
+  @@index([userId, createdAt])
+  @@index([riskId])
+}
+
+model ProjectOpportunity {
+  id        String        @id @default(uuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileId String
+  profile   CareerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  jobId     String?
+  job       Job?          @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  title                 String
+  idea                  String        @db.Text
+  requirementsAddressed Json          @default("[]") // requirementId[]
+  stack                 Json          @default("[]")
+  difficulty            Severity
+  estimatedHours        Int?
+  relevance             String        @db.Text
+  plan                  Json          @default("{}") // { day1:[], day2:[], milestones:[], scope:[] }
+  status                ProjectStatus @default(proposed)
+  completedAt           DateTime?
+  verifiedClaimId       String? // set ONLY after user confirmation of completion
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  references ProjectReference[]
+
+  @@index([userId, status])
+  @@index([jobId])
+  @@index([profileId])
+}
+
+model ProjectReference {
+  id            String             @id @default(uuid())
+  opportunityId String
+  opportunity   ProjectOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  projectId     String? // optional link when it becomes a portfolio Project
+  project       Project?           @relation("ProjectRefToProject", fields: [projectId], references: [id], onDelete: SetNull)
+  kind          ReferenceKind
+  title         String
+  url           String
+  licence       String?
+  activity      Json               @default("{}") // {stars,lastCommit,releases,archived}
+  retrievedAt   DateTime           @default(now())
+  notes         String?
+
+  @@index([opportunityId])
+  @@index([projectId])
 }

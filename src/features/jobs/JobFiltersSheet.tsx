@@ -1,9 +1,8 @@
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { SlidersHorizontal } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { JobFilters } from "@/features/jobs/JobFilters";
-import type { JobSearchFilters } from "@/services/api";
+import type { JobSearchFilters, LocationSuggestion } from "@/services/api";
 
 export interface JobFiltersSheetProps {
   filters: JobSearchFilters;
@@ -16,10 +15,23 @@ export interface JobFiltersSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   activeFilterCount: number;
+  // Suggestion props from the merged hook in Jobs.tsx (T228), forwarded to
+  // both JobFilters instances so desktop and mobile stay identical.
+  locationSuggestions?: LocationSuggestion[];
+  locationSuggestionsLoading?: boolean;
+  onRequestLocationSuggestions?: (query: string) => void;
+  /** Forwarded verbatim to both JobFilters instances (desktop row + sheet). */
+  profileMatchAvailable?: boolean;
+  onProfileMatch?: () => void;
+  profileMatchPending?: boolean;
+  /** Applied state forwarded verbatim to both JobFilters instances. */
+  profileMatchApplied?: boolean;
 }
 
 export function JobFiltersSheet({
   filters, onChange, onSearch, onClear, sources, resultCount, pending, open, onOpenChange, activeFilterCount,
+  locationSuggestions, locationSuggestionsLoading, onRequestLocationSuggestions,
+  profileMatchAvailable, onProfileMatch, profileMatchPending, profileMatchApplied,
 }: JobFiltersSheetProps) {
   return (
     <>
@@ -34,9 +46,7 @@ export function JobFiltersSheet({
           <SlidersHorizontal className="h-4 w-4" />
           Filters
           {activeFilterCount > 0 && (
-            <Badge variant="secondary" className="ml-1 h-5 min-w-5 rounded-full px-1 text-xs">
-              {activeFilterCount}
-            </Badge>
+            <span className="ml-1 text-xs text-ink-3 num">({activeFilterCount})</span>
           )}
         </Button>
       </div>
@@ -50,6 +60,13 @@ export function JobFiltersSheet({
           sources={sources}
           resultCount={resultCount}
           pending={pending}
+          locationSuggestions={locationSuggestions}
+          locationSuggestionsLoading={locationSuggestionsLoading}
+          onRequestLocationSuggestions={onRequestLocationSuggestions}
+          profileMatchAvailable={profileMatchAvailable}
+          onProfileMatch={onProfileMatch}
+          profileMatchPending={profileMatchPending}
+          profileMatchApplied={profileMatchApplied}
         />
       </div>
 
@@ -76,6 +93,13 @@ export function JobFiltersSheet({
               resultCount={resultCount}
               pending={pending}
               mobile
+              locationSuggestions={locationSuggestions}
+              locationSuggestionsLoading={locationSuggestionsLoading}
+              onRequestLocationSuggestions={onRequestLocationSuggestions}
+              profileMatchAvailable={profileMatchAvailable}
+              onProfileMatch={onProfileMatch}
+              profileMatchPending={profileMatchPending}
+              profileMatchApplied={profileMatchApplied}
             />
           </div>
         </SheetContent>

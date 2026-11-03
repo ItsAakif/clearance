@@ -1,261 +1,202 @@
-// AI Routes - Resume Generation, Improvement, etc.
-// Per security.md: Validate input
+// AI Routes - the RETIRED fabricating surface (T1110; FREEZE A-36/A-37/A-38).
+//
+// WHAT THIS FILE IS NOW: FIVE DEPRECATION HANDLERS AND NOTHING ELSE.
+//
+// Every route this router used to serve is gone. They were the only five routes on the
+// `/ai` prefix, so the router itself is now a deprecation surface: the paths stay PUBLISHED and
+// answer `410 Gone` with a machine-readable body naming the V2 successor, which is the contract
+// in `.planning/tasks/T1110-cutover.md` ("the fabricating AI endpoints return the deprecation
+// response") and the disposition FREEZE records for A-36/A-37/A-38.
+//
+// WHY 410 AND NOT 404. These paths were published for the life of the V1 app; an old client, a
+// bookmarked integration or a stale mobile build still POSTs them. A 404 says "this never
+// existed", which is false and which sends an integrator looking for a typo. A 410 says "this
+// existed and is deliberately gone", and it is the only status that REQUIRES the answer to name
+// the replacement.
+//
+// WHY UNCONDITIONAL, WITH NO FLAG. `V2_DISABLE_FREE_AI_GENERATION` used to gate the two
+// free-generation routes behind a `409` (T1003). That was a transitional state: a flag could not
+// bring the behaviour back, because the flag only ever said "stop". Now the implementation they
+// guarded is DELETED (FREEZE A-40, `backend/src/ai/resumeGenerator.ts`), so a flag that turned
+// the `410` off would have to resurrect code that no longer exists - a flag whose OFF state is
+// unreachable is a lie an operator would read as "generation is available again". The env KEY
+// stays in `backend/src/config/flags.ts` and in `src/lib/flags.ts` because
+// `src/lib/flags.test.ts` asserts the two runtimes name the same three keys; it is now a
+// recognised-and-ignored key. The only flag that still governs anything is `V2_TYPST_RENDER`.
+//
+// WHAT WAS DELETED ALONG WITH THESE HANDLERS, AND WHY IT IS NOT RESTORABLE BY A CALLER:
+//   A-36 `POST /generate-resume`, `POST /build-from-jd` - the prompt in the deleted generator
+//        asked the model for "[Generate a professional placeholder name]" and for 2-3 invented
+//        employers, titles, dates and quantified achievements, then wrote the result straight to
+//        a `Resume` row with no human gate.
+//   A-37 `POST /improve-bullet`, `POST /generate-summary` - single-shot whole-fragment rewrites
+//        with no schema validation and no before/after, so a claim could change without a diff.
+//   A-38 `POST /generate-interview-answer` - a free-form answer generator rather than a
+//        risk-derived, evidence-grounded one.
+//
+// WHAT IS DELIBERATELY STILL HERE. The BYOK key infrastructure (`ai/keyManager.ts`,
+// `ai/providerModels.ts`, `ai/providerRegistry.ts` - FREEZE B-12/B-13, "KEEP VERBATIM") is
+// untouched and is used by the V2 surfaces: `routes/tailor.ts` (the tailoring proposal stage),
+// `routes/interview-prep.ts`, `career/claimWriterAI.ts`, `ats/llmEvaluator.ts` and
+// `ats/matchEnhancer.ts`. The deterministic scanners and the 3-factor scorer
+// (`ats/scanner.ts`, `ats/atsScorer.ts` - FREEZE B-17/B-18) still run; they are INTERNAL signals
+// and are never presented as a number.
 
-import { Router } from 'express';
-import prisma from '../lib/prisma.js';
+import { Router, Response } from 'express';
 import { requireAuth } from '../middleware/auth.js';
-import { handleApiError, ForbiddenError, BadRequestError } from '../shared/errors.js';
-import { generateResumeFromInput, improveResumeBullet, generateProfessionalSummary, buildResumeFromJobDescription, AIGuidedInput } from '../ai/resumeGenerator.js';
-import { generateInterviewAnswer } from '../ai/interviewGenerator.js';
 
 const router = Router();
 
 /**
- * AI routes surface actionable, secret-free errors instead of a generic 500:
- * - no LLM key configured -> 503 with setup hint (message contains no secrets)
- * - invalid/retired model -> 502 naming provider + model
- * Everything else keeps the default minimal-error handling.
+ * Why each retired endpoint is retired, in the words a user needs.
+ *
+ * `error` is the human sentence. `code` is the stable machine token a client branches on. The
+ * rest is the successor: a `method` + `route` pair a caller can actually POST to, and the UI
+ * path a human can be sent to. Every field here is asserted verbatim by
+ * `routes/ai.retired.test.ts`, so this table is the contract rather than a comment about one.
  */
-function handleAiRouteError(error: unknown, res: Parameters<typeof handleApiError>[1]): void {
-  if (error instanceof Error) {
-    if (/api keys? configured/i.test(error.message)) {
-      console.error(`[${new Date().toISOString()}] [503] ${error.message}`);
-      res.status(503).json({ error: error.message });
-      return;
-    }
-    if (error.name === 'LlmModelError') {
-      console.error(`[${new Date().toISOString()}] [502] ${error.message}`);
-      res.status(502).json({ error: error.message });
-      return;
-    }
-  }
-  handleApiError(error, res);
+interface Deprecation {
+  /** The sentence a user reads. Names what the endpoint did wrong and what to do instead. */
+  error: string;
+  /** Stable machine token. Never changes for a given endpoint. */
+  code: string;
+  /** Why it went, as a token - `reason` is for logs and telemetry, not for rendering. */
+  reason:
+    | 'fabricated_candidate_history'
+    | 'unguarded_whole_fragment_rewrite'
+    | 'unguarded_whole_document_rewrite'
+    | 'free_form_answer_generator';
+  /** The HTTP method + route that replaces it. */
+  successor: { method: 'POST' | 'GET'; route: string; surface: string };
+  /** Where a human goes instead. Every one of these is a live route in `src/App.tsx`. */
+  successorUi: string;
 }
 
-// ==================== AI RESUME GENERATION ====================
+const DEPRECATIONS: Readonly<Record<string, Deprecation>> = {
+  '/generate-resume': {
+    error:
+      'This endpoint generated a resume for you, including a name, employers, dates and achievements ' +
+      'you never supplied, and saved it as one of your documents. It is retired. Import a document you ' +
+      'actually wrote: every statement in it starts as an unverified draft and nothing is confirmed ' +
+      'for you.',
+    code: 'free_generation_retired',
+    reason: 'fabricated_candidate_history',
+    successor: { method: 'POST', route: '/career/import/resume', surface: 'career import' },
+    successorUi: '/app/upload',
+  },
+  '/build-from-jd': {
+    error:
+      'This endpoint built a whole document from a job description and saved it as one of your ' +
+      'resumes. It is retired, for the same reason: a generated draft is not a record of your work. ' +
+      'Import what you wrote, then tailor toward the job as reviewable operations.',
+    code: 'free_generation_retired',
+    reason: 'fabricated_candidate_history',
+    successor: { method: 'POST', route: '/career/import/resume', surface: 'career import' },
+    successorUi: '/app/career',
+  },
+  '/improve-bullet': {
+    error:
+      'This endpoint rewrote one bullet in place, with no validation and no before/after, so a claim ' +
+      'could change without anything showing you what changed. It is retired. The tailoring surface ' +
+      'proposes OPERATIONS instead: each one carries its before text, its after text, the reason, and ' +
+      'the confirmed statement that grounds it - and a fact change is refused.',
+    code: 'unguarded_rewrite_retired',
+    reason: 'unguarded_whole_fragment_rewrite',
+    successor: { method: 'POST', route: '/resumes/:id/tailor', surface: 'tailoring operations' },
+    successorUi: '/app/tailor',
+  },
+  '/generate-summary': {
+    error:
+      'This endpoint wrote a professional summary from a role and a list of skills, with no record of ' +
+      'where any of it came from. It is retired. The tailoring surface proposes a summary as a ' +
+      'reviewable operation, grounded in the statements you have confirmed.',
+    code: 'unguarded_rewrite_retired',
+    reason: 'unguarded_whole_fragment_rewrite',
+    successor: { method: 'POST', route: '/resumes/:id/tailor', surface: 'tailoring operations' },
+    successorUi: '/app/tailor',
+  },
+  '/generate-interview-answer': {
+    error:
+      'This endpoint answered an interview question from free-form text, with nothing anchoring the ' +
+      'answer to anything you have actually done. It is retired. Interview prep now starts from the ' +
+      'risks and gaps in your own evidence and asks questions about those.',
+    code: 'unguarded_answer_generator_retired',
+    reason: 'free_form_answer_generator',
+    successor: { method: 'POST', route: '/interview-prep', surface: 'interview prep' },
+    successorUi: '/app/interview-prep',
+  },
+};
 
-router.post('/generate-resume', requireAuth, async (req, res) => {
-  try {
-    const input = req.body as AIGuidedInput;
-    
-    // Validate required fields
-    if (!input.targetRole || !input.experienceLevel) {
-      throw new BadRequestError('Target role and experience level are required');
-    }
-    
-    // Generate resume using AI
-    const generatedResume = await generateResumeFromInput(input);
-    
-    // Create the resume in database
-    const resume = await prisma.resume.create({
-      data: {
-        userId: req.user!.id,
-        name: generatedResume.name || `Resume for ${input.targetRole}`,
-        personalInfo: generatedResume.personalInfo,
-        summary: generatedResume.summary,
-        experience: generatedResume.experience,
-        education: generatedResume.education,
-        skills: generatedResume.skills,
-        sections: [
-          { id: 'personal', type: 'personal', title: 'Personal Information', order: 0, visible: true },
-          { id: 'summary', type: 'summary', title: 'Professional Summary', order: 1, visible: true },
-          { id: 'experience', type: 'experience', title: 'Work Experience', order: 2, visible: true },
-          { id: 'education', type: 'education', title: 'Education', order: 3, visible: true },
-          { id: 'skills', type: 'skills', title: 'Skills', order: 4, visible: true },
-        ]
-      }
-    });
-    
-    res.status(201).json({
-      id: resume.id,
-      name: resume.name,
-      personalInfo: resume.personalInfo,
-      summary: resume.summary,
-      experience: resume.experience,
-      education: resume.education,
-      skills: resume.skills,
-      createdAt: resume.createdAt
-    });
-  } catch (error) {
-    handleAiRouteError(error, res);
+/**
+ * The one body builder, so every retired endpoint answers the same SHAPE.
+ *
+ * `operationsContainDocument: false` is carried over from T1080 deliberately: the successor is an
+ * operation list and never a document, and a client that used to receive a whole generated resume
+ * must be able to assert that the answer it got back is not one.
+ */
+function deprecationBody(method: string, route: string, spec: Deprecation): Record<string, unknown> {
+  return {
+    error: spec.error,
+    code: spec.code,
+    retired: true,
+    httpStatus: 410,
+    endpoint: `${method} /ai${route}`,
+    reason: spec.reason,
+    successor: spec.successor,
+    successorUi: spec.successorUi,
+    operationsContainDocument: false,
+  };
+}
+
+/**
+ * Register ONE retired endpoint.
+ *
+ * `requireAuth` still runs first, and that is on purpose: this route used to read and write the
+ * caller's rows, so dropping authentication would turn "gone" into "open to anyone". The refusal
+ * is the same for an anonymous caller (401) and an authenticated one (410), and both come before
+ * any body parsing, any key lease and any database access - which is what retiring a fabricating
+ * endpoint has to mean.
+ */
+function retired(method: 'POST' | 'GET', route: string): void {
+  const spec = DEPRECATIONS[route];
+  if (!spec) {
+    // A typo in the table above would otherwise register a route that 410s without a body.
+    throw new Error(`ai.ts: no deprecation recorded for ${route}`);
   }
-});
+  const handler = (_req: unknown, res: Response) => {
+    res.status(410).json(deprecationBody(method, route, spec));
+  };
+  if (method === 'POST') router.post(route, requireAuth, handler);
+  else router.get(route, requireAuth, handler);
+}
 
-// ==================== JD-DRIVEN AI BUILD ====================
+// ==================== THE RETIRED SURFACE (A-36 / A-37 / A-38) ====================
 
-router.post('/build-from-jd', requireAuth, async (req, res) => {
-  try {
-    const { jobDescription, fullName, email, phone, location, resumeId, name } = req.body as {
-      jobDescription?: string;
-      fullName?: string;
-      email?: string;
-      phone?: string;
-      location?: string;
-      resumeId?: string;
-      name?: string;
-    };
+retired('POST', '/generate-resume');
+retired('POST', '/build-from-jd');
+retired('POST', '/improve-bullet');
+retired('POST', '/generate-summary');
+retired('POST', '/generate-interview-answer');
 
-    if (!jobDescription || jobDescription.trim().length < 50) {
-      throw new BadRequestError('A job description of at least 50 characters is required');
-    }
-
-    // When a base resume is provided, tailor it toward the JD (truthful reshaping).
-    let existingResume: Parameters<typeof buildResumeFromJobDescription>[0]['existingResume'];
-    if (resumeId) {
-      const base = await prisma.resume.findFirst({
-        where: { id: resumeId, userId: req.user!.id },
-        select: {
-          personalInfo: true,
-          summary: true,
-          experience: true,
-          education: true,
-          skills: true,
-        },
-      });
-      if (base) {
-        existingResume = {
-          personalInfo: base.personalInfo as any,
-          summary: base.summary as any,
-          experience: base.experience as any,
-          education: base.education as any,
-          skills: (base.skills as any) || [],
-        };
-      }
-    }
-
-    const { extracted, resume: generated } = await buildResumeFromJobDescription({
-      jobDescription: jobDescription.trim(),
-      fullName,
-      email,
-      phone,
-      location,
-      existingResume,
-    });
-
-    const created = await prisma.resume.create({
-      data: {
-        userId: req.user!.id,
-        name: name?.trim() || `Resume for ${extracted.targetRole || 'New Role'}`,
-        personalInfo: generated.personalInfo,
-        summary: generated.summary,
-        experience: generated.experience,
-        education: generated.education,
-        skills: generated.skills,
-        sections: [
-          { id: 'personal', type: 'personal', title: 'Personal Information', order: 0, visible: true },
-          { id: 'summary', type: 'summary', title: 'Professional Summary', order: 1, visible: true },
-          { id: 'experience', type: 'experience', title: 'Work Experience', order: 2, visible: true },
-          { id: 'education', type: 'education', title: 'Education', order: 3, visible: true },
-          { id: 'skills', type: 'skills', title: 'Skills', order: 4, visible: true },
-        ],
-      },
-    });
-
-    res.status(201).json({
-      id: created.id,
-      name: created.name,
-      extracted,
-      personalInfo: created.personalInfo,
-      summary: created.summary,
-      experience: created.experience,
-      education: created.education,
-      skills: created.skills,
-      createdAt: created.createdAt,
-    });
-  } catch (error) {
-    handleAiRouteError(error, res);
-  }
-});
-
-// ==================== IMPROVE BULLET POINT ====================
-
-router.post('/improve-bullet', requireAuth, async (req, res) => {
-  try {
-    const { bullet, jobTitle, targetRole } = req.body;
-    
-    if (!bullet || !jobTitle) {
-      throw new BadRequestError('Bullet point and job title are required');
-    }
-    
-    const improved = await improveResumeBullet(bullet, jobTitle, targetRole);
-    
-    res.json({ improved });
-  } catch (error) {
-    handleAiRouteError(error, res);
-  }
-});
-
-// ==================== GENERATE PROFESSIONAL SUMMARY ====================
-
-router.post('/generate-summary', requireAuth, async (req, res) => {
-  try {
-    const { currentRole, targetRole, yearsExperience, keySkills, achievements } = req.body;
-    
-    if (!currentRole || !targetRole) {
-      throw new BadRequestError('Current role and target role are required');
-    }
-    
-    const summary = await generateProfessionalSummary(
-      currentRole,
-      targetRole,
-      yearsExperience || '',
-      keySkills || [],
-      achievements || ''
-    );
-    
-    res.json({ summary });
-  } catch (error) {
-    handleAiRouteError(error, res);
-  }
-});
-
-// ==================== INTERVIEW ANSWER ====================
-// Frontend Q&A dialog (aiApi.generateInterviewAnswer) posts here; the
-// service existed but no route was wired, so generation 404'd.
-
-router.post('/generate-interview-answer', requireAuth, async (req, res) => {
-  try {
-    const { question, category, jobTitle, jobDescription, jobListingId } = req.body as {
-      question?: string;
-      category?: string;
-      jobTitle?: string;
-      jobDescription?: string;
-      jobListingId?: string;
-    };
-
-    if (!question || !question.trim()) {
-      throw new BadRequestError('An interview question is required');
-    }
-
-    const validCategories = ['behavioral', 'technical', 'situational', 'general'] as const;
-    const safeCategory = validCategories.includes(category as (typeof validCategories)[number])
-      ? (category as (typeof validCategories)[number])
-      : undefined;
-
-    // The Q&A dialog passes an Application id as jobListingId; resolve the
-    // linked job listing for answer context. Unknown ids fall back to generic.
-    let title = jobTitle;
-    let description = jobDescription;
-    if ((!title || !description) && jobListingId) {
-      const app = await prisma.application.findFirst({
-        where: { id: String(jobListingId), userId: req.user!.id },
-        include: { jobListing: true },
-      });
-      title = title || app?.jobListing?.title;
-      description = description || app?.jobListing?.description;
-    }
-
-    const answer = await generateInterviewAnswer({
-      question,
-      category: safeCategory,
-      jobTitle: title,
-      jobDescription: description,
-    });
-
-    res.json({ answer });
-  } catch (error) {
-    handleAiRouteError(error, res);
-  }
+/**
+ * A catch-all over the rest of the `/ai` prefix, so a path that was never published is also a
+ * `410` rather than the router's default 404.
+ *
+ * This is NOT a wildcard that could shadow another router: `routes/index.ts` mounts this router
+ * at `/ai` and nothing else declares that prefix, so the fall-through is the last word on it. It
+ * answers `404` for a genuinely unknown path - "this was never here" is the honest answer there -
+ * and `410` for the five recorded ones, which are declared above and therefore matched first.
+ */
+router.use((req, res) => {
+  res.status(404).json({
+    error: 'No AI endpoint is published at this path.',
+    code: 'ai_path_not_found',
+    retired: true,
+    publishedAiPaths: Object.keys(DEPRECATIONS).map((route) => `POST /ai${route}`),
+  });
 });
 
 export default router;
+
+/** The retired-path table, exported so a test can assert the routes and the table agree. */
+export const RETIRED_AI_PATHS = Object.keys(DEPRECATIONS);

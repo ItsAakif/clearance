@@ -2,27 +2,13 @@ import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DotGridSection } from "@/components/backgrounds";
 import { LandingHeader } from "@/components/layout";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Upload, FileText, CheckCircle2, ArrowRight, ArrowLeft, AlertCircle, Loader2 } from "lucide-react";
-import { ATSQuickScore } from "@/components/ats";
+import { FileText, ArrowRight, ArrowLeft, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { AnimatedButton, StepIndicator } from "@/components/animations";
 import { resumeApi } from "@/services/api/resume";
 import { useToast } from "@/hooks/use-toast";
 import type { Resume } from "@/types/resume";
-import type { ResumeData } from "@/types/resume";
-
-function toResumeData(resume: Resume): ResumeData {
-  return {
-    personalInfo: resume.personalInfo,
-    summary: resume.summary,
-    experience: resume.experience,
-    education: resume.education,
-    skills: resume.skills.map((skill) => skill.name),
-  };
-}
 
 type UploadState = "idle" | "uploading" | "processing" | "success" | "error";
 
@@ -121,11 +107,15 @@ export default function UploadPage() {
     }
   }, [processFile]);
 
+  // T1110: `/app/build` is deleted (FREEZE A-24). The uploaded row opens in the Studio, which
+  // is the editor's successor; the Studio's own "no revisions yet" empty state is the honest
+  // answer for a row that has never been projected, and it is where upgrade-on-open picks it
+  // up. `?from=upload` is dropped: nothing downstream read it.
   const handleContinue = () => {
     if (uploadedResume) {
-      navigate(`/app/build/${uploadedResume.id}?from=upload`);
+      navigate(`/app/studio/${uploadedResume.id}`);
     } else {
-      navigate("/app/build?from=upload");
+      navigate("/app/studio");
     }
   };
 
@@ -137,7 +127,7 @@ export default function UploadPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-paper">
       <LandingHeader />
 
       <DotGridSection className="flex items-center justify-center" minHeight="min-h-screen">
@@ -160,46 +150,43 @@ export default function UploadPage() {
           >
             <button
               onClick={() => navigate("/get-started")}
-              className="mb-6 flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+              className="mb-6 flex items-center gap-2 text-sm text-ink-3 transition-colors hover:text-ink"
             >
               <ArrowLeft className="h-4 w-4" />
               Back to options
             </button>
           </motion.div>
 
-          {/* Header */}
+          {/* Header: page title, one context line, hairline. */}
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             transition={{ delay: 0.2 }}
-            className="mb-8 text-center"
+            className="border-b border-rule pb-4"
           >
-            <h1 className="text-2xl font-semibold text-foreground md:text-3xl">
-              Upload your resume
-            </h1>
-            <p className="mt-2 text-muted-foreground">
-              We'll extract your content and help you optimise it
+            <h1 className="page-title text-ink">Upload your resume</h1>
+            <p className="mt-1 text-sm text-ink-3">
+              We extract your content, then you confirm every statement before it can be rendered.
             </p>
           </motion.div>
 
-          {/* Upload Card */}
           <AnimatePresence mode="wait">
             {(uploadState === "idle" || uploadState === "error") && (
               <motion.div
                 key="upload"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.3 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
               >
-                <Card
+                <div
                   className={cn(
-                    "relative border-2 border-dashed p-12 text-center transition-all duration-200",
+                    "relative mt-6 rounded-card border border-dashed bg-card p-8 transition-colors duration-150",
                     isDragging
-                      ? "border-primary bg-primary/5"
+                      ? "border-accent-hi bg-accent"
                       : uploadState === "error"
-                      ? "border-destructive/50 bg-destructive/5"
-                      : "border-border hover:border-muted-foreground/50"
+                      ? "border-destructive/50"
+                      : "border-border hover:border-rule-strong"
                   )}
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
@@ -210,156 +197,104 @@ export default function UploadPage() {
                     accept=".pdf,.docx,.doc,.txt"
                     onChange={handleFileSelect}
                     className="absolute inset-0 cursor-pointer opacity-0"
+                    aria-label="Choose a resume file"
                   />
-                  
-                  <motion.div
-                    animate={isDragging ? { scale: 1.1 } : { scale: 1 }}
-                    className={cn(
-                      "mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full transition-colors",
-                      uploadState === "error" ? "bg-destructive/10" : "bg-secondary"
-                    )}
-                  >
-                    {uploadState === "error" ? (
-                      <AlertCircle className="h-8 w-8 text-destructive" />
-                    ) : (
-                      <Upload className={cn("h-8 w-8", isDragging ? "text-primary" : "text-muted-foreground")} />
-                    )}
-                  </motion.div>
-
-                  <h2 className="mb-2 text-lg font-semibold text-foreground">
+                  <p className="text-base font-medium text-ink">
                     {isDragging ? "Drop your file here" : "Drop your resume here"}
-                  </h2>
-                  <p className="mb-4 text-sm text-muted-foreground">
-                    or click to browse your files
                   </p>
-
+                  <p className="mt-1 text-sm text-ink-3">or click to browse your files</p>
                   {uploadState === "error" && (
-                    <motion.p
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mb-4 text-sm font-medium text-destructive"
-                    >
-                      {errorMessage}
-                    </motion.p>
+                    <p className="mt-3 text-sm text-destructive">{errorMessage}</p>
                   )}
-
-                  <div className="flex flex-wrap justify-center gap-2 text-xs text-muted-foreground">
-                    <span className="rounded-full bg-secondary px-3 py-1">PDF</span>
-                    <span className="rounded-full bg-secondary px-3 py-1">DOCX</span>
-                    <span className="rounded-full bg-secondary px-3 py-1">TXT</span>
-                    <span className="rounded-full bg-secondary px-3 py-1">Max 10MB</span>
-                  </div>
-                </Card>
+                  <p className="mt-4 text-xs2 text-ink-3">PDF, DOCX, TXT - max 10 MB</p>
+                </div>
               </motion.div>
             )}
 
             {(uploadState === "uploading" || uploadState === "processing") && (
               <motion.div
                 key="processing"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.3 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="surface-card mt-6 flex items-start gap-3 p-5"
               >
-                <Card className="p-12 text-center">
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-                    className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10"
-                  >
-                    <Loader2 className="h-8 w-8 text-primary" />
-                  </motion.div>
-
-                  <h2 className="mb-2 text-lg font-semibold text-foreground">
+                <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-ink-3" aria-hidden="true" />
+                <div className="min-w-0">
+                  <p className="text-base font-medium text-ink">
                     {uploadState === "uploading" ? "Uploading..." : "Processing your resume..."}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
+                  </p>
+                  <p className="mt-0.5 text-sm text-ink-3">
                     {uploadState === "uploading"
                       ? "Please wait while we upload your file"
                       : "Extracting content and analysing structure"}
                   </p>
-
                   {uploadedFile && (
-                    <div className="mt-6 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                      <FileText className="h-4 w-4" />
+                    <p className="mt-1 flex items-center gap-1.5 text-xs2 text-ink-3">
+                      <FileText className="h-3.5 w-3.5" aria-hidden="true" />
                       {uploadedFile.name}
-                    </div>
+                    </p>
                   )}
-                </Card>
+                </div>
               </motion.div>
             )}
 
             {uploadState === "success" && (
               <motion.div
                 key="success"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.3 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="surface-card mt-6 p-5"
               >
-                <Card className="p-8 text-center">
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                    className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-success/10"
-                  >
-                    <CheckCircle2 className="h-8 w-8 text-success" />
-                  </motion.div>
-
-                  <h2 className="mb-2 text-lg font-semibold text-foreground">
-                    Resume uploaded successfully
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    We've extracted your content and it's ready for editing
+                <h2 className="section-label">Resume uploaded successfully</h2>
+                <div className="mt-2 border-t border-rule" />
+                <p className="mt-2 text-sm text-ink-3">
+                  We've extracted your content and it's ready for editing
+                </p>
+                {uploadedFile && (
+                  <p className="mt-2 flex items-center gap-1.5 text-xs2 text-ink-3">
+                    <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+                    {uploadedFile.name}
                   </p>
+                )}
 
-                  {uploadedFile && (
-                    <div className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-border bg-secondary/50 px-4 py-2 text-sm">
-                      <FileText className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-foreground">{uploadedFile.name}</span>
-                    </div>
-                  )}
-
-                  {/* ATS Quick Score */}
-                  <div className="mt-6">
-                    <ATSQuickScore
-                      variant="card"
-                      resumeData={uploadedResume ? toResumeData(uploadedResume) : undefined}
-                    />
-                  </div>
-
-                  <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
-                    <AnimatedButton
-                      variant="hero"
-                      onClick={handleContinue}
-                      className="gap-2"
-                      glowOnHover
-                    >
-                      Continue to Templates
-                      <ArrowRight className="h-4 w-4" />
-                    </AnimatedButton>
-                    <Button
-                      variant="outline"
-                      onClick={handleReset}
-                    >
-                      Upload Different File
-                    </Button>
-                  </div>
-                </Card>
+                {/* T1110 removed the inline ATS Quick Score card; T1101 removed its replacement link too.
+                    The /app/ats-scan destination is GONE: that page existed only to draw a
+                    0-100 dial and a good/needs-work grade, which 06 sec. E.6 forbids, so it
+                    is retired and now redirects to /app/match. The deterministic scanner
+                    still runs server-side as an internal signal (FREEZE B-16/B-17/B-18); there is
+                    simply no score screen left to point at. What remains is the honest next
+                    step, and nothing on this screen computes anything. */}
+                <div className="mt-5 flex flex-wrap items-center gap-4">
+                  <AnimatedButton variant="hero" onClick={handleContinue} className="gap-2">
+                    Continue to the Studio
+                    <ArrowRight className="h-4 w-4" />
+                  </AnimatedButton>
+                  <button
+                    type="button"
+                    onClick={() => navigate("/app/match")}
+                    className="text-xs2 text-ink-3 underline-offset-4 hover:text-ink hover:underline"
+                  >
+                    Match a job to your evidence
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    className="text-xs2 text-ink-3 underline-offset-4 hover:text-ink hover:underline"
+                  >
+                    Upload a different file
+                  </button>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* Help text */}
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-            className="mt-6 text-center text-xs text-muted-foreground"
-          >
-            Your file is processed securely and never shared with third parties
-          </motion.p>
+          <p className="mt-8 text-xs2 text-ink-3">
+            Your file is processed securely and never shared with third parties.
+          </p>
         </div>
       </DotGridSection>
     </div>

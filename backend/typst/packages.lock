@@ -1,0 +1,129 @@
+// T1005 - vendored package set. MACHINE-READABLE.
+//
+// NORMATIVE DOC: .planning/specs/clearance-v2/render-sandbox-policy.md (section 7.3)
+// Policy rule this file exists to satisfy:
+//   "A package with no recorded licence cannot be vendored, and a template that
+//    declares a package absent from packages.lock cannot render (rejected with a
+//    machine-readable reason)."
+//
+// The registry gate reads THIS file. It is the allowlist; `backend/typst/packages/` on
+// disk is the materialisation. A package present in the tree but absent here is a
+// review failure; a package present here but absent from the tree fails the render with
+// a package-not-found error (assertion V12, negative half - fixture
+// f-unvendored-package). The two are the same rule seen from both sides.
+//
+// Formatting note: this is a flat, line-oriented record rather than a lockfile in some
+// tool's own format, because there is no tool to parse it - the gate is a registry
+// review plus a diff. A real lockfile format would be adopted if a resolver is ever
+// introduced; today a resolver would be a liability, because the whole point of
+// vendoring is that resolution does not happen at compile time (policy 8.2 B6).
+//
+// ============================================================================
+// SUMMARY: the spike requires ZERO third-party Typst Universe packages.
+// ============================================================================
+//
+// PROOF that the statement above is true rather than convenient:
+//
+//   1. Fixture a-valid-resume imports nothing at all. It is a complete, realistic,
+//      two-page A4 resume built only from Typst's built-in layout, text, list and grid
+//      functions plus `json()`. It renders to A4 and is byte-identical across two runs.
+//   2. Every other fixture either imports nothing or imports something that must FAIL
+//      (f-unvendored-package) or resolves the one vendored entry below (g).
+//   3. The vendored tree's only non-first-party content is EMPTY, and the spike asserts
+//      /work/.pkgcache is EMPTY after every run, so nothing is ever resolved from a
+//      cache, let alone downloaded.
+//
+// WHAT WOULD CHANGE THIS: the first real Clearance template that needs a Universe
+// package. The procedure is then, in order:
+//   1. add the exact `@namespace/name:version` to the PACKAGES block below, with the
+//      upstream version, the licence SPDX identifier, and the sha256 of the registry
+//      tarball;
+//   2. add the tarball digest to fetch-assets.sh, which downloads, verifies and
+//      unpacks it into packages/<namespace>/<name>/<version>/;
+//   3. add the per-package entry to LICENSES.md;
+//   4. confirm the package's `compiler` bound in its typst.toml is satisfied by
+//      TYPST_VERSION - T1005 measured two packages failing this (see below), which is
+//      precisely the failure mode an exact pin plus this file exist to catch.
+//   5. re-run the spike. A package that cannot compile on the pinned engine must not be
+//      added, because a pinned-but-broken package is an outage with no workaround.
+
+// ---------------------------------------------------------------------------
+// ENGINE
+// ---------------------------------------------------------------------------
+engine.typst.version       = 0.15.1
+engine.typst.asset         = typst-x86_64-unknown-linux-musl.tar.xz
+engine.typst.asset.sha256  = a6d077d0a95eed5a2eba715b2dae06be954f624ccbf85758a03f389ded33118c
+engine.typst.binary.sha256 = 29273eaa04f6d00edd0c2bec578f565fc9c65be856bfbffc894567c68ed0b237
+engine.typst.license       = Apache-2.0
+// Kept here as well as in the Dockerfile ARGs and in backend/src/render/sandbox.ts
+// TYPST_PIN because four independent copies that must agree is already too many; the
+// spike asserts they agree and fails loudly if they ever drift.
+
+// ---------------------------------------------------------------------------
+// FONTS (not packages, but the same pin discipline: a closed, vendored font set is
+// what makes two hosts with different installed fonts produce identical PDFs,
+// policy 7.4 / risk R14)
+// ---------------------------------------------------------------------------
+font.family                       = Source Serif 4
+font.upstream                     = adobe-fonts/source-serif
+font.upstream.version             = 4.005R
+font.upstream.tag                 = https://github.com/adobe-fonts/source-serif/releases/tag/4.005R
+font.upstream.asset               = source-serif-4.005_Desktop.zip
+font.upstream.asset.sha256        = 549fdb8f9a682bd06944298621404969f6de77c2e422ff3b8244a1dcd6a0c425
+font.license                      = OFL-1.1
+font.faces.0.file                 = SourceSerif4-Regular.ttf
+font.faces.0.sha256               = e5a4ee6a3d87bb9024796be390c6771e2a0eb1883dae25effaf57ca01668e24b
+font.faces.1.file                 = SourceSerif4-Semibold.ttf
+font.faces.1.sha256               = 36db62940cb5728b12b1802476dc7fcf4c6c519a7bdd476ba23a4e555fc4655f
+font.faces.2.file                 = SourceSerif4-Bold.ttf
+font.faces.2.sha256               = 7cf4f4e1ad74f45058d5bc61716b82560442fbdcd9d3654d2dea96bf6c683d86
+// Three faces, not the full 16-family distribution. The set is an ALLOWLIST, and a
+// smaller allowlist is a smaller thing to audit.
+// REJECTED candidates, recorded so the choice is reviewable: DejaVu 2.37 (permissive
+// but not OFL, and the Bitstream Vera / Arev licence is a poor fit for an
+// open-source product), Noto Serif / Noto Sans (OFL, but the release archives are
+// 70-117 MB to obtain two faces), Inter 4.1 (OFL, but a 33 MB archive for a UI font).
+// Source Serif is a print text face, which is what a resume is, under a clean OFL.
+
+// ---------------------------------------------------------------------------
+// PACKAGES (third-party Typst Universe)
+// ---------------------------------------------------------------------------
+thirdPartyPackages.count = 0
+// There are none. The spike's compile path needs no Universe package, and adding one
+// would add unreviewed code to a mount the compiler trusts, for no benefit. The two
+// measured rejections that justify this are recorded in
+// packages/clearance/spike-probe/1.0.0/lib.typ:
+//   @preview/valkyrie:0.2.0  GPL-3.0-only          -> licence incompatible
+//   @preview/cetz:0.3.1      LGPL-3.0-or-later,
+//                            compiler="0.12.0"      -> not maintained for 0.15.1
+//   @preview/tidy:0.1.0      MIT, dependency-free   -> does not compile on 0.15.1
+//                                                    (src/tidy.typ:96, "sequence does
+//                                                    not have field label-prefix")
+
+// ---------------------------------------------------------------------------
+// FIRST-PARTY VENDORED PACKAGES (tracked in git, not fetched)
+// ---------------------------------------------------------------------------
+packages.count = 1
+
+packages.0.spec          = @clearance/spike-probe:1.0.0
+packages.0.name          = spike-probe
+packages.0.namespace     = clearance
+packages.0.version       = 1.0.0
+packages.0.upstream      = first-party: backend/typst/packages/clearance/spike-probe/1.0.0
+packages.0.license       = Apache-2.0
+packages.0.spikeOnly     = true
+packages.0.usedBy        = fixtures/g-vendored-package
+packages.0.proves        = assertion V12 positive half
+// spikeOnly: this package exists so the vendored-resolution MECHANISM has a subject.
+// It is not a template dependency and no template may import it. Remove it together
+// with fixture g when the first real package is vendored, or keep it as the standing
+// regression test for the mechanism - it is 20 lines and imports nothing.
+
+// ---------------------------------------------------------------------------
+// RUNTIME VARIANTS REJECTED DURING T1005
+// ---------------------------------------------------------------------------
+// The musl build is mandated by policy 7.1 (a static musl binary for a minimal image).
+// The gnu build would additionally require glibc in the image for no benefit.
+// aarch64 and armv7 assets were verified present upstream with their own digests
+// (5aa8d74a..., 44986312...) and are recorded here so a multi-arch port is a pin
+// change in this file rather than a new investigation.

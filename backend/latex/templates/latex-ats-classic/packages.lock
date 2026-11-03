@@ -1,0 +1,19 @@
+// Clearance resume template: latex-ats-classic
+// TEMPLATE LOCKFILE - this template's own record of what it depends on.
+//
+// The engine is TeX Live, shipped INSIDE the pinned worker image rather than vendored
+// as an archive. `engine.latex.version` is the same value as LATEX_PIN.version in
+// backend/src/render/sandbox.ts; a mismatch is RENDER_TOOLCHAIN_MISMATCH at registry load.
+//
+// No `font.faces.*` records: this template uses the image's default Computer Modern
+// faces by loading no font package beyond T1 `fontenc`. There is therefore no vendored
+// font to licence here. No packages are imported either.
+
+template.id          = latex-ats-classic
+template.version     = 1.0.0
+
+engine.latex.version = 2022
+engine.latex.license = LPPL-1.3c
+
+thirdPartyPackages.count = 0
+packages.count = 0

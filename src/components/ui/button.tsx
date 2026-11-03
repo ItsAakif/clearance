@@ -5,27 +5,24 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 active:scale-[0.98]",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-[13px] font-medium ring-offset-background transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-md",
-        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-        outline: "border border-border bg-card text-foreground hover:bg-secondary hover:shadow-sm",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80 hover:shadow-sm",
-        ghost: "text-muted-foreground hover:bg-secondary hover:text-foreground",
-        link: "text-foreground underline-offset-4 hover:underline",
-        // Hero variant for landing page CTAs
-        hero: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm hover:shadow-lg",
-        // Accent variant with subtle wash background
-        accent: "bg-accent text-accent-foreground hover:bg-accent-emphasis/40",
+        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        destructive: "bg-transparent text-destructive hover:bg-destructive/10",
+        outline: "border border-border bg-card text-ink hover:bg-paper-2",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        ghost: "text-ink-2 hover:bg-paper-2 hover:text-ink",
+        link: "text-accent-dark underline-offset-4 hover:underline",
+        hero: "bg-primary text-primary-foreground hover:bg-primary/90",
       },
       size: {
-        default: "h-10 px-5 py-2",
-        sm: "h-9 rounded-lg px-4 text-sm",
-        lg: "h-12 rounded-lg px-8 text-base",
-        xl: "h-14 rounded-lg px-10 text-base font-semibold",
-        icon: "h-10 w-10",
+        default: "h-9 px-4",
+        sm: "h-8 px-3 text-xs2",
+        lg: "h-10 px-5 text-sm",
+        xl: "h-11 px-6 text-sm",
+        icon: "h-9 w-9",
       },
     },
     defaultVariants: {

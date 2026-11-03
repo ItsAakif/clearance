@@ -26,7 +26,18 @@ const CATEGORIES: InterviewAnswerCategory[] = ['behavioral', 'technical', 'situa
 export function QuestionAnswerForm({ initial, onSubmit, onCancel, isSaving }: Props) {
   const [question, setQuestion] = useState(initial?.question || '');
   const [answer, setAnswer] = useState(initial?.answer || '');
-  const [category, setCategory] = useState<InterviewAnswerCategory | undefined>(initial?.category || undefined);
+  // Stored rows carry a free-form nullable string (Prisma `String?`); the
+  // picker only supports the four known categories, so anything else starts
+  // unselected rather than breaking the select.
+  const initialCategory = initial?.category ?? undefined;
+  const [category, setCategory] = useState<InterviewAnswerCategory | undefined>(
+    initialCategory === 'behavioral' ||
+    initialCategory === 'technical' ||
+    initialCategory === 'situational' ||
+    initialCategory === 'general'
+      ? initialCategory
+      : undefined,
+  );
   const [notes, setNotes] = useState(initial?.notes || '');
   const [tagsText, setTagsText] = useState((initial?.tags || []).join(', '));
 

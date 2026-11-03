@@ -1,0 +1,47 @@
+// Clearance resume template: typst-ats-classic
+// TEMPLATE LOCKFILE - this template's own record of what it depends on.
+//
+// MACHINE-READABLE, in the same grammar as backend/typst/packages.lock and parsed by the
+// same reader (backend/src/render/lockfile.ts). It is this template's half of the
+// licence gate: the shared backend/typst/packages.lock is the VENDORED SET (what the
+// repository has), and this file is what THIS TEMPLATE claims to need. The registry
+// refuses a template whose two halves disagree - on id, version, engine pin, font file
+// set, licences, and the font digests - so an edit that bumps one and not the other
+// fails at registry load instead of at render time.
+//
+// A fourth record could sit here and is deliberately absent: `preview.png`. ADR-044 D5
+// and the orchestrator ruling keep `thumbnail` null, because a thumbnail would be a
+// second artifact and policy 6.1/6.3 allows exactly one entry in the output directory.
+//
+// Adding a font or a package is NOT a one-line change. It requires, together, in ONE
+// change: this file, the shared backend/typst/packages.lock, an entry in
+// backend/typst/LICENSES.md, a digest in backend/typst/fetch-assets.sh, and a re-run of
+// the toolchain spike. See render-sandbox-policy section 7.3.
+
+template.id          = typst-ats-classic
+template.version     = 1.0.2
+
+// The engine pin. The registry compares it with the pin in backend/src/render/sandbox.ts
+// and refuses a mismatch with RENDER_TOOLCHAIN_MISMATCH, never a silent degrade.
+engine.typst.version       = 0.15.1
+engine.typst.asset         = typst-x86_64-unknown-linux-musl.tar.xz
+engine.typst.asset.sha256  = a6d077d0a95eed5a2eba715b2dae06be954f624ccbf85758a03f389ded33118c
+engine.typst.binary.sha256 = 29273eaa04f6d00edd0c2bec578f565fc9c65be856bfbffc894567c68ed0b237
+engine.typst.license       = Apache-2.0
+
+// ZERO Typst Universe packages. `template.typ` imports nothing, and the registry
+// checks that every `@ns/name:ver` literal in the source is a subset of the declared
+// packages - an undeclared import is a rejection, not a download attempt.
+thirdPartyPackages.count = 0
+packages.count = 0
+
+// The vendored font allowlist: three faces of one text family, SIL Open Font 1.1.
+// The font is named in `template.typ` because the font set is CLOSED; the embedded
+// typst fonts are ignored, so an unqualified `#set text(...)` has no font to resolve.
+font.license              = OFL-1.1
+font.faces.0.file         = SourceSerif4-Regular.ttf
+font.faces.0.sha256       = e5a4ee6a3d87bb9024796be390c6771e2a0eb1883dae25effaf57ca01668e24b
+font.faces.1.file         = SourceSerif4-Semibold.ttf
+font.faces.1.sha256       = 36db62940cb5728b12b1802476dc7fcf4c6c519a7bdd476ba23a4e555fc4655f
+font.faces.2.file         = SourceSerif4-Bold.ttf
+font.faces.2.sha256       = 7cf4f4e1ad74f45058d5bc61716b82560442fbdcd9d3654d2dea96bf6c683d86

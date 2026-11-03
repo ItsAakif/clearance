@@ -1,23 +1,23 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { motion } from "framer-motion";
 import {
   Plus,
   FileText,
+  File,
+  FileType2,
   MoreHorizontal,
   Copy,
   Archive,
   Trash2,
-  Edit,
-  Clock,
   Search,
   Loader2,
-  Briefcase,
+  Upload,
 } from "lucide-react";
-import { AppLayout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { PageBody } from "@/components/layout";
+import { SectionView } from "@/components/layout/SectionView";
+import { ResumeSectionTabs } from "@/components/layout/SectionTabs";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -37,10 +37,13 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useResumes, useCreateResume, useDeleteResume } from "@/hooks/useResumeApi";
 import { resumeKeys } from "@/hooks/useResumeApi";
-import { resumeApi } from "@/services/api/resume";
+import { useUploadedFiles, useUploadUploadedFile } from "@/hooks/useJobs";
+import { resumeApi, uploadedFilesApi, type UploadedFileSummary } from "@/services/api/resume";
+import { UploadedFilePreview } from "@/features/uploaded-files/UploadedFilePreview";
 import type { Resume } from "@/types/resume";
 
 // Format relative time
@@ -61,6 +64,32 @@ function formatRelativeTime(dateString: string): string {
   return date.toLocaleDateString();
 }
 
+// Raw uploaded files are rendered as-is (ADR-007): icon + type badge only,
+// never through a builder template.
+function uploadedFileIcon(fileType: string) {
+  const normalized = (fileType ?? "").trim().toLowerCase();
+  if (normalized === "application/pdf") return FileText;
+  if (
+    normalized ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    normalized === "application/msword"
+  )
+    return FileType2;
+  return File;
+}
+
+function uploadedTypeLabel(fileType: string): string {
+  const normalized = (fileType ?? "").trim().toLowerCase();
+  if (normalized === "application/pdf") return "PDF";
+  if (
+    normalized ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    normalized === "application/msword"
+  )
+    return "Word";
+  return "Text";
+}
+
 export default function ResumesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -75,9 +104,57 @@ export default function ResumesPage() {
   const [variantTargetJob, setVariantTargetJob] = useState("");
 
   // Fetch resumes from API
-  const { data: resumes = [], isLoading, error } = useResumes();
+  const { data: resumes = [], isLoading: resumesLoading, error: resumesError, refetch: refetchResumes } = useResumes();
   const createResumeMutation = useCreateResume();
   const deleteResumeMutation = useDeleteResume();
+
+  // Raw uploaded files (server returns newest-first); each tab owns its query.
+  const {
+    data: uploadedFiles = [],
+    isLoading: filesLoading,
+    error: filesError,
+    refetch: refetchFiles,
+  } = useUploadedFiles();
+  const [previewFile, setPreviewFile] = useState<UploadedFileSummary | null>(null);
+
+  // Direct resume upload (header + empty state share one hidden file input).
+  // The mutation invalidates the list so the new file appears immediately.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const upload = useUploadUploadedFile();
+
+  const handleFileUpload = async (file: File) => {
+    try {
+      const created = await upload.mutateAsync(file);
+      toast({ title: "Resume uploaded", description: `"${created.fileName}" is ready to preview.` });
+    } catch {
+      // Error toast is handled by the mutation.
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDownloadUploaded = async (file: UploadedFileSummary) => {
+    try {
+      const blob = await uploadedFilesApi.download(file.id);
+      const url = URL.createObjectURL(blob);
+      try {
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = file.fileName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      toast({
+        title: "Download failed",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const filteredResumes = resumes.filter((r) => {
     const matchesSearch = r.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -95,7 +172,7 @@ export default function ResumesPage() {
       
       setNewResumeName("");
       setIsCreateDialogOpen(false);
-      navigate(`/app/build/${newResume.id}`);
+      navigate(`/app/studio/${newResume.id}`);
     } catch (error) {
       // Error is handled by the mutation
     }
@@ -116,7 +193,7 @@ export default function ResumesPage() {
       });
       
       toast({ title: "Resume duplicated" });
-      navigate(`/app/build/${duplicate.id}`);
+      navigate(`/app/studio/${duplicate.id}`);
     } catch (error) {
       toast({ 
         title: "Failed to duplicate resume", 
@@ -191,69 +268,93 @@ export default function ResumesPage() {
     }
   };
 
-  const getScoreColor = (score?: number) => {
-    if (!score) return "bg-muted text-muted-foreground";
-    if (score >= 80) return "bg-success/10 text-success";
-    if (score >= 60) return "bg-warning/10 text-warning";
-    return "bg-destructive/10 text-destructive";
-  };
-
-  // Loading state
-  if (isLoading) {
-    return (
-      <AppLayout>
-        <div className="flex h-full items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      </AppLayout>
-    );
-  }
-
-  // Error state
-  if (error) {
-    return (
-      <AppLayout>
-        <div className="flex h-full flex-col items-center justify-center text-center">
-          <FileText className="h-12 w-12 text-muted-foreground/50 mb-4" />
-          <h3 className="font-medium text-foreground mb-1">Failed to load resumes</h3>
-          <p className="text-sm text-muted-foreground mb-4">
-            {error instanceof Error ? error.message : "An error occurred"}
-          </p>
-          <Button onClick={() => window.location.reload()}>
-            Try Again
-          </Button>
-        </div>
-      </AppLayout>
-    );
-  }
+  // T1101: `getScoreColor` is GONE with the `ATS {n}` badge. Three thresholds (80 / 60) over a
+  // stored number, chosen to paint a traffic light on it: that is the whole of E.6's forbidden
+  // "grade", and it is now unreachable code. `src/noDerivedScore.test.ts` fails if it comes back.
 
   return (
-    <AppLayout>
-      <div className="flex h-full flex-col overflow-hidden">
-        {/* Header */}
-        <header className="flex items-center justify-between border-b border-border bg-card px-6 py-4">
+    <Tabs defaultValue="resumes" className="flex h-full flex-col overflow-hidden">
+        {/* Header: title + one context line + actions on the right. */}
+        <header className="flex flex-col gap-3 border-b border-border bg-paper px-8 py-5 sm:flex-row sm:items-center sm:justify-between print:hidden">
           <div>
-            <h1 className="text-lg font-semibold text-foreground">My Resumes</h1>
-            <p className="text-sm text-muted-foreground">
-              Manage all your resumes and variants
-            </p>
+            <h1 className="page-title text-ink">Resumes</h1>
           </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={upload.isPending}
+            >
+              {upload.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              {upload.isPending ? "Uploading..." : "Upload resume"}
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.doc,.docx,.txt"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleFileUpload(file);
+              }}
+            />
+          </div>
+        </header>
+
+        <div className="px-8 pt-6 print:hidden">
+          <ResumeSectionTabs />
+          <SectionView
+            title="My resumes"
+            description="Every resume and variant, newest activity first."
+          />
+        </div>
+
+        {/* View + tools row: tabs, search, archive toggle, create. */}
+        <div className="flex flex-wrap items-center gap-4 border-b border-border px-8 py-3 print:hidden">
+          <TabsList className="h-8 border-b-0">
+            <TabsTrigger value="resumes">Resumes</TabsTrigger>
+            <TabsTrigger value="uploaded">
+              {filesLoading ? "Uploaded" : `Uploaded (${uploadedFiles.length})`}
+            </TabsTrigger>
+          </TabsList>
+          <div className="relative w-full max-w-xs flex-1">
+            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search resumes"
+              className="pl-8"
+            />
+          </div>
+          <Button
+            variant={showArchived ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setShowArchived(!showArchived)}
+          >
+            <Archive className="mr-2 h-4 w-4" />
+            {showArchived ? "Showing archived" : "View archived"}
+          </Button>
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button className="ml-auto">
                 <Plus className="mr-2 h-4 w-4" />
-                New Resume
+                New resume
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Create New Resume</DialogTitle>
+                <DialogTitle>Create new resume</DialogTitle>
                 <DialogDescription>
                   Give your resume a name to get started
                 </DialogDescription>
               </DialogHeader>
               <div className="py-4">
-                <Label htmlFor="name">Resume Name</Label>
+                <Label htmlFor="name">Resume name</Label>
                 <Input
                   id="name"
                   value={newResumeName}
@@ -273,171 +374,123 @@ export default function ResumesPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        </header>
-
-        {/* Toolbar */}
-        <div className="flex items-center gap-4 border-b border-border bg-background px-6 py-3">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search resumes..."
-              className="pl-9"
-            />
-          </div>
-          <Button
-            variant={showArchived ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => setShowArchived(!showArchived)}
-          >
-            <Archive className="mr-2 h-4 w-4" />
-            {showArchived ? "Showing Archived" : "View Archived"}
-          </Button>
         </div>
 
-        {/* Resume Grid */}
-        <div className="flex-1 overflow-auto p-6">
+        <TabsContent value="resumes" className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden">
+          {resumesLoading ? (
+            <div className="flex h-full items-center justify-center">
+              <Loader2 className="h-5 w-5 animate-spin text-ink-3" />
+            </div>
+          ) : resumesError ? (
+            <PageBody width="full" className="px-8 py-6">
+              <p className="text-xs2 text-ink-3">
+                Could not load resumes. {resumesError instanceof Error ? resumesError.message : "An error occurred"}
+              </p>
+              <button
+                type="button"
+                onClick={() => void refetchResumes()}
+                className="mt-2 text-xs2 text-ink-2 underline underline-offset-4 hover:text-ink"
+              >
+                Try again
+              </button>
+            </PageBody>
+          ) : (
+            <PageBody width="full" className="flex-1 overflow-auto px-8 py-6">
           {filteredResumes.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <FileText className="h-12 w-12 text-muted-foreground/50 mb-4" />
-              <h3 className="font-medium text-foreground mb-1">No resumes found</h3>
-              <p className="text-sm text-muted-foreground mb-4">
+            <div className="max-w-md pt-4">
+              <p className="text-xs2 text-ink-3">
                 {searchQuery
-                  ? "Try a different search term"
+                  ? "No resume matches that search."
                   : showArchived
-                  ? "No archived resumes"
-                  : "Create your first resume to get started"}
+                  ? "No archived resumes."
+                  : "No resumes yet. Create the first one to start editing."}
               </p>
               {!searchQuery && !showArchived && (
-                <Button onClick={() => setIsCreateDialogOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Resume
-                </Button>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateDialogOpen(true)}
+                  className="mt-2 text-xs2 text-ink-2 underline underline-offset-4 hover:text-ink"
+                >
+                  Create resume
+                </button>
               )}
             </div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredResumes.map((resume, index) => (
-                <motion.div
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {filteredResumes.map((resume) => (
+                <div
                   key={resume.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
+                  role="link"
+                  tabIndex={0}
+                  aria-label={`${resume.name}: open in the Studio`}
+                  onClick={() => navigate(`/app/studio/${resume.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      navigate(`/app/studio/${resume.id}`);
+                    }
+                  }}
+                  className="group surface-card surface-hover relative flex cursor-pointer flex-col overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
                 >
-                  <Card
-                    className="group relative overflow-hidden transition-all hover:shadow-lg hover:-translate-y-0.5 cursor-pointer"
-                    onClick={() => navigate(`/app/build/${resume.id}`)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        navigate(`/app/build/${resume.id}`);
-                      }
-                    }}
-                    tabIndex={0}
-                    role="link"
-                    aria-label={`${resume.name}: open in builder`}
-                  >
-                    {/* Preview thumbnail */}
-                    <div className="aspect-[8.5/6] bg-secondary/30 border-b border-border p-4">
-                      <div className="h-full w-full rounded bg-card p-3 shadow-sm">
-                        <div className="space-y-2">
-                          <div className="h-2 w-20 rounded-sm bg-foreground/70" />
-                          <div className="flex gap-2">
-                            <div className="h-1.5 w-10 rounded-sm bg-muted-foreground/30" />
-                            <div className="h-1.5 w-8 rounded-sm bg-muted-foreground/30" />
-                          </div>
-                          <div className="h-px w-full bg-border mt-2" />
-                          <div className="space-y-1 pt-1">
-                            <div className="h-1.5 w-full rounded-sm bg-muted-foreground/20" />
-                            <div className="h-1.5 w-3/4 rounded-sm bg-muted-foreground/20" />
-                          </div>
+                  {/* Preview thumbnail: a quiet A4-ish sheet, never a fake score. */}
+                  <div className="aspect-[8.5/6] border-b border-border bg-secondary/50 p-4">
+                    <div className="h-full w-full rounded-md bg-card p-3 shadow-e1">
+                      <div className="space-y-1.5">
+                        <div className="h-2 w-24 rounded-full bg-ink/70" />
+                        <div className="h-1 w-32 rounded-full bg-ink/20" />
+                        <div className="mt-3 space-y-1">
+                          <div className="h-1 w-full rounded-full bg-ink/10" />
+                          <div className="h-1 w-11/12 rounded-full bg-ink/10" />
+                          <div className="h-1 w-4/5 rounded-full bg-ink/10" />
+                        </div>
+                        <div className="mt-3 h-1 w-16 rounded-full bg-accent-dark/60" />
+                        <div className="space-y-1">
+                          <div className="h-1 w-full rounded-full bg-ink/10" />
+                          <div className="h-1 w-10/12 rounded-full bg-ink/10" />
+                          <div className="h-1 w-3/4 rounded-full bg-ink/10" />
                         </div>
                       </div>
                     </div>
-
-                    {/* Info */}
-                    <div className="p-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-medium text-foreground truncate">
-                            {resume.name}
-                          </h3>
-                          <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                            <Clock className="h-3 w-3" />
-                            <span>{formatRelativeTime(resume.updatedAt)}</span>
-                          </div>
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {resume.lastATSScore ? (
-                              <Badge className={getScoreColor(resume.lastATSScore)}>
-                                ATS {resume.lastATSScore}
-                              </Badge>
-                            ) : (
-                              <Badge variant="secondary">No ATS score yet</Badge>
-                            )}
-                            {resume.isArchived && <Badge variant="outline">Archived</Badge>}
-                            {!!resume.variants?.length && (
-                              <Badge variant="outline">{resume.variants.length} variants</Badge>
-                            )}
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 text-xs"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void navigate(`/app/match?resumeId=${encodeURIComponent(resume.id)}`);
-                              }}
-                              onKeyDown={(event) => event.stopPropagation()}
-                            >
-                              <Briefcase className="mr-1 h-3 w-3" />
-                              Find matching jobs
-                            </Button>
-                          </div>
-                          {!!resume.variants?.length && (
-                            <div className="mt-3 space-y-2">
-                              {resume.variants.map((variant) => (
-                                <div key={variant.id} className="flex items-center justify-between rounded-md border border-border px-2 py-1.5 text-xs">
-                                  <div className="min-w-0">
-                                    <p className="truncate font-medium text-foreground">{variant.name}</p>
-                                    {variant.targetJob ? (
-                                      <p className="truncate text-muted-foreground">{variant.targetJob}</p>
-                                    ) : null}
-                                  </div>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 px-2"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      void handleDeleteVariant(resume.id, variant.id);
-                                    }}
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                  </div>
+                  <div className="flex items-start gap-3 p-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-2">
+                        <h3 className="truncate text-sm font-semibold text-ink">{resume.name}</h3>
+                        {resume.isArchived && <Badge variant="outline">Archived</Badge>}
                       </div>
+                      <p className="mt-1 flex items-center gap-1.5 text-xs2 text-ink-3">
+                        <span className="whitespace-nowrap">{formatRelativeTime(resume.updatedAt)}</span>
+                        {!!resume.variants?.length && (
+                          <>
+                            <span>·</span>
+                            <span className="num">{resume.variants.length} variants</span>
+                          </>
+                        )}
+                      </p>
                     </div>
-
-                    {/* Actions dropdown */}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="h-8 w-8 shrink-0 text-ink-3"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenuItem onClick={() => navigate(`/app/build/${resume.id}`)}>
-                          <Edit className="mr-2 h-4 w-4" />
-                          Edit
+                        <DropdownMenuItem onClick={() => navigate(`/app/studio/${resume.id}`)}>
+                          <FileText className="mr-2 h-4 w-4" />
+                          Open
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() =>
+                            navigate(`/app/match?resumeId=${encodeURIComponent(resume.id)}`)
+                          }
+                        >
+                          <Search className="mr-2 h-4 w-4" />
+                          Find matching jobs
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleDuplicate(resume)}>
                           <Copy className="mr-2 h-4 w-4" />
@@ -445,7 +498,7 @@ export default function ResumesPage() {
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => openVariantDialog(resume)}>
                           <Copy className="mr-2 h-4 w-4" />
-                          Create Variant
+                          Create variant
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => void handleArchiveToggle(resume)}>
                           <Archive className="mr-2 h-4 w-4" />
@@ -461,13 +514,152 @@ export default function ResumesPage() {
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
-                  </Card>
-                </motion.div>
+                  </div>
+                  {!!resume.variants?.length && (
+                    <div className="border-t border-border px-4 py-2">
+                      {resume.variants.map((variant) => (
+                        <div
+                          key={variant.id}
+                          className="flex items-center justify-between gap-3 py-1 text-xs2"
+                        >
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="truncate text-ink">{variant.name}</span>
+                            {variant.targetJob ? (
+                              <span className="truncate text-ink-3">{variant.targetJob}</span>
+                            ) : null}
+                          </div>
+                          <button
+                            type="button"
+                            aria-label={`Delete variant ${variant.name}`}
+                            className="shrink-0 text-ink-3 hover:text-ink"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleDeleteVariant(resume.id, variant.id);
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           )}
-        </div>
-      </div>
+        </PageBody>
+          )}
+        </TabsContent>
+
+        <TabsContent value="uploaded" className="mt-0 flex-1 overflow-auto">
+          <PageBody width="full" className="px-8 py-6">
+          {filesLoading ? (
+            <div className="flex h-full items-center justify-center">
+              <Loader2 className="h-5 w-5 animate-spin text-ink-3" />
+            </div>
+          ) : filesError ? (
+            <div className="max-w-md pt-4">
+              <p className="text-xs2 text-ink-3">
+                Could not load uploaded files. {filesError instanceof Error ? filesError.message : "An error occurred"}
+              </p>
+              <button
+                type="button"
+                onClick={() => void refetchFiles()}
+                className="mt-2 text-xs2 text-ink-2 underline underline-offset-4 hover:text-ink"
+              >
+                Try again
+              </button>
+            </div>
+          ) : uploadedFiles.length === 0 ? (
+            <div className="max-w-md pt-4">
+              <p className="text-xs2 text-ink-3">
+                No uploaded files yet. Upload a resume, or import one from Job Match.
+              </p>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={upload.isPending}
+                className="mt-2 text-xs2 text-ink-2 underline underline-offset-4 hover:text-ink disabled:opacity-50"
+              >
+                {upload.isPending ? "Uploading..." : "Upload resume"}
+              </button>
+            </div>
+          ) : (
+            <div className="max-w-3xl space-y-2">
+              {uploadedFiles.map((file) => {
+                const TypeIcon = uploadedFileIcon(file.fileType);
+                return (
+                  <div key={file.id} className="surface-card flex items-start gap-3 p-4">
+                    <TypeIcon className="mt-0.5 h-4 w-4 shrink-0 text-ink-3" aria-hidden="true" />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="truncate text-base font-medium text-ink" title={file.fileName}>
+                        {file.fileName}
+                      </h3>
+                      <p className="mt-0.5 flex items-center gap-1.5 text-xs2 text-ink-3">
+                        <span>{uploadedTypeLabel(file.fileType)}</span>
+                        <span>·</span>
+                        <span className="whitespace-nowrap">{formatRelativeTime(file.createdAt)}</span>
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewFile(file)}
+                          className="text-xs2 text-ink-2 underline-offset-4 hover:text-ink hover:underline"
+                        >
+                          Preview
+                        </button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-ink-3"
+                              aria-label={`More actions for ${file.fileName}`}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => void handleDownloadUploaded(file)}>
+                              Download
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                void navigate(`/app/match?uploadedFileId=${encodeURIComponent(file.id)}`)
+                              }
+                            >
+                              Find matching jobs
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                void navigate(`/app/profile?uploadedFileId=${encodeURIComponent(file.id)}`)
+                              }
+                            >
+                              Autofill profile
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          </PageBody>
+        </TabsContent>
+
+      <Dialog open={previewFile !== null} onOpenChange={(open) => { if (!open) setPreviewFile(null); }}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="truncate">{previewFile?.fileName}</DialogTitle>
+            <DialogDescription>
+              Raw uploaded file, shown as-is.
+            </DialogDescription>
+          </DialogHeader>
+          <UploadedFilePreview file={previewFile} />
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isVariantDialogOpen} onOpenChange={setIsVariantDialogOpen}>
         <DialogContent>
@@ -497,6 +689,6 @@ export default function ResumesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </AppLayout>
+    </Tabs>
   );
 }

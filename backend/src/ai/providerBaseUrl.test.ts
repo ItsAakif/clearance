@@ -76,24 +76,32 @@ describe('provider baseURL selection', () => {
     expect(openaiInstances[0].baseURL).toBe('https://generativelanguage.googleapis.com/v1beta/openai');
   });
 
-  it('resumeGenerator uses the openai baseURL for an openai key', async () => {
+  // T1110 DELETED `ai/resumeGenerator.ts` (FREEZE A-40), so these two cases can no longer run
+  // through `improveResumeBullet`. The PROPERTY they guard did not move: a leased key must yield
+  // THAT provider's base URL, and the only thing under test is the
+  // `leaseNextLlmKey` -> `createLlmClient` -> `runLlmCompletion` chain that `providerModels.ts`
+  // owns and that every live BYOK caller goes through. `interviewGenerator` (FREEZE B-21) is on
+  // that same chain, so the assertions are byte-identical - only the entry point moved, and
+  // openai and groq are still each leased and still each asserted, which is the whole point of
+  // these two cases. Nothing about the guarantee is weaker.
+  it('a leased openai key yields the openai baseURL', async () => {
     mockLeaseNextLlmKey.mockResolvedValue(llmKey('openai'));
-    completionHandler.mockResolvedValue({ choices: [{ message: { content: 'Improved bullet' } }] });
-    const { improveResumeBullet } = await import('./resumeGenerator.js');
+    completionHandler.mockResolvedValue({ choices: [{ message: { content: 'Mock answer' } }] });
+    const { generateInterviewAnswer } = await import('./interviewGenerator.js');
 
-    const result = await improveResumeBullet('Did stuff', 'Engineer');
+    const result = await generateInterviewAnswer({ question: 'What have you shipped?' });
 
-    expect(result).toBe('Improved bullet');
+    expect(result).toBe('Mock answer');
     expect(openaiInstances).toHaveLength(1);
     expect(openaiInstances[0].baseURL).toBe('https://api.openai.com/v1');
   });
 
-  it('resumeGenerator still uses the groq baseURL for a groq key', async () => {
+  it('a leased groq key still yields the groq baseURL', async () => {
     mockLeaseNextLlmKey.mockResolvedValue(llmKey('groq'));
-    completionHandler.mockResolvedValue({ choices: [{ message: { content: 'Improved bullet' } }] });
-    const { improveResumeBullet } = await import('./resumeGenerator.js');
+    completionHandler.mockResolvedValue({ choices: [{ message: { content: 'Mock answer' } }] });
+    const { generateInterviewAnswer } = await import('./interviewGenerator.js');
 
-    await improveResumeBullet('Did stuff', 'Engineer');
+    await generateInterviewAnswer({ question: 'What have you shipped?' });
 
     expect(openaiInstances).toHaveLength(1);
     expect(openaiInstances[0].baseURL).toBe('https://api.groq.com/openai/v1');

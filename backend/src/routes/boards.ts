@@ -6,13 +6,36 @@ import { requireAuth } from '../middleware/auth.js';
 import { handleApiError, NotFoundError } from '../shared/errors.js';
 import { validateInput } from '../shared/validation.js';
 import { seedDefaultBoardsForUser } from '../jobSources/defaultBoards.js';
-import { SUPPORTED_SCRAPER_PROVIDERS } from '../jobSources/index.js';
+// Board-type and provider data come from the provider registry (Wave 1,
+// ADR-025) - the single source of truth. SUPPORTED_SCRAPER_PROVIDERS and
+// AGGREGATOR_PROVIDERS are re-exported by the registry (their canonical
+// homes, adapters/scraper.ts and aggregators.ts, keep their exports for
+// existing importers); the isDeprecated/is predicates stay imported from
+// aggregators.ts.
+import {
+  PROVIDERS,
+  getProvider,
+  SUPPORTED_SCRAPER_PROVIDERS,
+  AGGREGATOR_PROVIDERS,
+} from '../jobSources/providerRegistry.js';
+import { isDeprecatedAggregatorProvider, isAggregatorProvider } from '../jobSources/aggregators.js';
+import type { JobSourceConfig } from '../jobSources/index.js';
+
+// Board types derived from the registry (PROVIDERS declaration order). The
+// tuple cast is narrowing-only: the registry declares all 14 types (pinned
+// by providerRegistry.test.ts and boards.validation.test.ts), and the
+// JobSourceConfig['type'] union keeps the public schema type exact.
+const boardTypeValues = PROVIDERS.map((p) => p.type);
+if (boardTypeValues.length === 0) {
+  throw new Error('Provider registry must declare at least one board type');
+}
+export const BOARD_TYPE_VALUES = boardTypeValues as unknown as [
+  JobSourceConfig['type'],
+  ...JobSourceConfig['type'][],
+];
 
 const createSchema = z.object({
-  type: z.enum([
-    'greenhouse', 'ashby', 'lever', 'workday', 'rss', 'json', 'search',
-    'smartrecruiters', 'recruitee', 'personio', 'jobicy', 'hnalgolia', 'scraper', 'aggregator',
-  ]),
+  type: z.enum(BOARD_TYPE_VALUES),
   name: z.string().min(1, 'Name required').max(100),
   boardId: z.string().max(200).optional(),
   feedUrl: z.string().url().optional().or(z.literal('')),
@@ -45,7 +68,14 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 
 // Explain, for any board config, whether Clearance can actually scrape it and why.
 // This lets the UI tell a user up-front whether a board they add will work.
-function explainScrapability(input: {
+//
+// Registry-driven (Wave 1, ADR-025): the gating knowledge - which config
+// field each board family needs, and which backend it scrapes via - comes
+// from the provider descriptor's kind/requires, not from a per-type
+// if-ladder. The reason sentences are UI copy preserved verbatim from the
+// pre-registry version (pinned by boards.validation.test.ts); only their
+// selection is descriptor-driven.
+export function explainScrapability(input: {
   type: string;
   feedUrl?: string | null;
   boardId?: string | null;
@@ -53,58 +83,100 @@ function explainScrapability(input: {
   scraperProvider?: string | null;
   aggregatorProvider?: string | null;
 }): { scrapable: boolean; via: string; reason: string } {
-  const { type, feedUrl, boardId, searchQuery, scraperProvider } = input;
-
-  const ats = ['greenhouse', 'ashby', 'lever', 'smartrecruiters', 'recruitee', 'personio'];
-  if (ats.includes(type)) {
-    return boardId
-      ? { scrapable: true, via: 'ats', reason: `Fetched from the public ${type} API using the company token.` }
-      : { scrapable: false, via: 'ats', reason: `Requires a boardId (company token) for the ${type} API.` };
+  const descriptor = getProvider(input.type);
+  if (!descriptor) {
+    return { scrapable: false, via: 'unsupported', reason: `Unknown board type "${input.type}".` };
   }
-  if (type === 'rss' || type === 'json') {
-    return feedUrl
-      ? { scrapable: true, via: 'aggregator', reason: `Fetched from the provided ${type} feed URL (keyless).` }
-      : { scrapable: false, via: 'aggregator', reason: 'Requires a feedUrl.' };
-  }
-  if (type === 'workday') {
-    return feedUrl
-      ? { scrapable: true, via: 'aggregator', reason: 'Fetched from the Workday RSS/JSON feed URL.' }
-      : { scrapable: false, via: 'aggregator', reason: 'Requires a feedUrl.' };
-  }
-  if (type === 'jobicy') {
-    return { scrapable: true, via: 'aggregator', reason: 'Fetched from Jobicy’s keyless remote-jobs API.' };
-  }
-  if (type === 'hnalgolia') {
-    return { scrapable: true, via: 'aggregator', reason: 'Fetched from the Hacker News (Algolia) jobs API - keyless.' };
-  }
-  if (type === 'search') {
-    return searchQuery
-      ? { scrapable: true, via: 'search', reason: 'Run as a web search via your Tavily/Exa key (or keyless fallback).' }
-      : { scrapable: false, via: 'search', reason: 'Requires a searchQuery.' };
-  }
-  if (type === 'scraper') {
-    if (!scraperProvider) {
-      return { scrapable: false, via: 'scraper', reason: 'Requires a scraperProvider (e.g. indeed, naukri, foundit).' };
-    }
-    if ((SUPPORTED_SCRAPER_PROVIDERS as readonly string[]).includes(scraperProvider)) {
+  switch (descriptor.kind) {
+    case 'api': {
+      // ATS descriptors require a company token ('board'); the keyless API
+      // descriptors (jobicy, hnalgolia) require nothing and always scrape.
+      if (descriptor.requires.includes('board')) {
+        return input.boardId
+          ? { scrapable: true, via: 'ats', reason: `Fetched from the public ${descriptor.type} API using the company token.` }
+          : { scrapable: false, via: 'ats', reason: `Requires a boardId (company token) for the ${descriptor.type} API.` };
+      }
+      // Keyless boards need no config. Their UI sentences are bespoke, so
+      // they are preserved per type, with the descriptor's own explain as
+      // the fallback for future keyless descriptors.
+      const keylessReason: Record<string, string> = {
+        jobicy: 'Fetched from Jobicy’s keyless remote-jobs API.',
+        hnalgolia: 'Fetched from the Hacker News (Algolia) jobs API - keyless.',
+      };
       return {
         scrapable: true,
-        via: 'scraper',
-        reason: `Scraped via your configured backend for "${scraperProvider}". Hard boards (LinkedIn/Indeed/ZipRecruiter/Glassdoor/Bayt) use RapidAPI; medium boards (YC/Wellfound/Instahyre/Sprout/Google) use Firecrawl/Crawl4AI.`,
+        via: 'aggregator',
+        reason: keylessReason[descriptor.type] ?? descriptor.explain,
       };
     }
-    return {
-      scrapable: false,
-      via: 'scraper',
-      reason: `"${scraperProvider}" is not a supported scraper. Supported: ${SUPPORTED_SCRAPER_PROVIDERS.join(', ')}.`,
-    };
+    case 'feed':
+    case 'json': {
+      // Feed/JSON descriptors require a feedUrl.
+      if (!input.feedUrl) {
+        return { scrapable: false, via: 'aggregator', reason: 'Requires a feedUrl.' };
+      }
+      if (descriptor.type === 'workday') {
+        return { scrapable: true, via: 'aggregator', reason: 'Fetched from the Workday RSS/JSON feed URL.' };
+      }
+      return { scrapable: true, via: 'aggregator', reason: `Fetched from the provided ${descriptor.type} feed URL (keyless).` };
+    }
+    case 'search': {
+      // Creation-time check: a search board needs a query to ever return
+      // rows. (At run time an empty effective query is an intentional empty -
+      // see the search descriptor's handler - but a board stored with no
+      // query can never match, so the UI flags it here.)
+      return input.searchQuery
+        ? { scrapable: true, via: 'search', reason: 'Run as a web search via your Tavily/Exa key (or keyless fallback).' }
+        : { scrapable: false, via: 'search', reason: 'Requires a searchQuery.' };
+    }
+    case 'scraper': {
+      const { scraperProvider } = input;
+      if (!scraperProvider) {
+        return { scrapable: false, via: 'scraper', reason: `Requires a scraperProvider (one of: ${SUPPORTED_SCRAPER_PROVIDERS.join(', ')}).` };
+      }
+      if ((SUPPORTED_SCRAPER_PROVIDERS as readonly string[]).includes(scraperProvider)) {
+        return {
+          scrapable: true,
+          via: 'scraper',
+          reason: `Scraped via your configured backend for "${scraperProvider}". Hard boards (LinkedIn/Indeed/ZipRecruiter/Glassdoor/Bayt) use RapidAPI; medium boards (YC/Wellfound/Instahyre/Sprout/Google) use Firecrawl/Crawl4AI.`,
+        };
+      }
+      return {
+        scrapable: false,
+        via: 'scraper',
+        reason: `"${scraperProvider}" is not a supported scraper. Supported: ${SUPPORTED_SCRAPER_PROVIDERS.join(', ')}.`,
+      };
+    }
+    case 'aggregator': {
+      const provider = input.aggregatorProvider;
+      if (!provider) {
+        return { scrapable: false, via: 'aggregator', reason: `Requires an aggregatorProvider (${AGGREGATOR_PROVIDERS.join(', ')}).` };
+      }
+      if (isDeprecatedAggregatorProvider(provider)) {
+        return { scrapable: false, via: 'aggregator', reason: `Aggregator "${provider}" is no longer supported. Update or delete this board.` };
+      }
+      if (!isAggregatorProvider(provider)) {
+        return { scrapable: false, via: 'aggregator', reason: `Unknown aggregator "${provider}". Supported: ${AGGREGATOR_PROVIDERS.join(', ')}.` };
+      }
+      return { scrapable: true, via: 'aggregator', reason: `Fetched from the ${provider} API using your BYOK key.` };
+    }
+    case 'browser': {
+      // Wave 6 (T724, ADR-029): last-resort rendered-DOM reader, deep mode
+      // only, ENHANCEMENT ONLY. Creation-time check mirrors the
+      // descriptor's stored-config require (feedUrl); deepMode is a run
+      // flag supplied by the deep-search caller, not stored board config.
+      // Without the optional engine the tier reports skipped-with-reason,
+      // never failed - so a configured board is still "scrapable".
+      return input.feedUrl
+        ? { scrapable: true, via: 'browser', reason: 'Last-resort rendered-DOM reader (deep mode only, after a cheaper tier failed for the same URL). Needs the optional browser engine; without it the tier reports skipped.' }
+        : { scrapable: false, via: 'browser', reason: 'Requires a feedUrl (the company career page URL).' };
+    }
+    default: {
+      // Unreachable: kind is a closed union and every case returns. Fails
+      // closed so a future kind can never return undefined.
+      return { scrapable: false, via: 'unsupported', reason: `Unknown board type "${input.type}".` };
+    }
   }
-  if (type === 'aggregator') {
-    return scraperProvider || (input as { aggregatorProvider?: string | null }).aggregatorProvider
-      ? { scrapable: true, via: 'aggregator', reason: 'Fetched from the aggregator API (Adzuna/Careerjet/Jooble) using your BYOK key.' }
-      : { scrapable: false, via: 'aggregator', reason: 'Requires an aggregatorProvider (adzuna, careerjet, or jooble).' };
-  }
-  return { scrapable: false, via: 'unsupported', reason: `Unknown board type "${type}".` };
 }
 
 // Validate (without saving) whether a board config will scrape.
@@ -143,6 +215,11 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     }
     if (type === 'aggregator' && !aggregatorProvider) {
       return res.status(400).json({ error: 'aggregatorProvider is required for aggregator boards' });
+    }
+    if (type === 'aggregator' && aggregatorProvider && !isAggregatorProvider(aggregatorProvider)) {
+      return res.status(400).json({
+        error: `Unsupported aggregatorProvider "${aggregatorProvider}". Supported: ${AGGREGATOR_PROVIDERS.join(', ')}.`,
+      });
     }
     const board = await prisma.jobBoard.create({
       data: {
@@ -192,6 +269,15 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
     const board = await prisma.jobBoard.findUnique({ where: { id: req.params.id } });
     if (!board) throw new NotFoundError('Job Board');
     if (board.userId !== req.user!.id) return res.status(403).json({ error: 'Forbidden' });
+    if (
+      aggregatorProvider &&
+      aggregatorProvider !== board.aggregatorProvider &&
+      !isAggregatorProvider(aggregatorProvider)
+    ) {
+      return res.status(400).json({
+        error: `Unsupported aggregatorProvider "${aggregatorProvider}". Supported: ${AGGREGATOR_PROVIDERS.join(', ')}.`,
+      });
+    }
     const updated = await prisma.jobBoard.update({
       where: { id: board.id },
       data: {

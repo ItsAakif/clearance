@@ -13,6 +13,20 @@ interface InteractiveDotGridProps {
   className?: string;
 }
 
+const readDotTokens = () => {
+  const styles = getComputedStyle(document.documentElement);
+  // Tokens are stored as space-separated HSL channels, e.g. "15.39 90.55% 44%".
+  const channels = (styles.getPropertyValue('--dot-color').trim() || '15.3913 90.5512% 44%')
+    .split(/\s+/);
+  const [h = '15.3913', s = '90.5512%', l = '44%'] = channels;
+  const opacity = styles.getPropertyValue('--dot-opacity').trim() || '0.10';
+  const hoverOpacity = styles.getPropertyValue('--dot-hover-opacity').trim() || '0.26';
+  return {
+    base: `hsla(${h}, ${s}, ${l}, ${opacity})`,
+    hover: `hsla(${h}, ${s}, ${l}, ${hoverOpacity})`,
+  };
+};
+
 const InteractiveDotGrid = ({
   dotSpacing = 32,
   dotBaseSize = 2,
@@ -34,8 +48,7 @@ const InteractiveDotGrid = ({
     if (!ctx) return;
 
     // Get computed styles to read CSS variables
-    const computedStyle = getComputedStyle(document.documentElement);
-    const isDark = document.documentElement.classList.contains('dark');
+    let dotTokens = readDotTokens();
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
@@ -66,12 +79,7 @@ const InteractiveDotGrid = ({
       if (!ctx || !canvas) return;
 
       const rect = canvas.getBoundingClientRect();
-      const isDarkNow = document.documentElement.classList.contains('dark');
-      
-      // Using new palette: Pine Blue for light, Dry Sage tint for dark
-      const baseColor = isDarkNow ? 'rgba(210, 204, 161, 0.12)' : 'rgba(56, 119, 128, 0.12)';
-      const hoverColor = isDarkNow ? 'rgba(210, 204, 161, 0.5)' : 'rgba(56, 119, 128, 0.45)';
-      
+
       // Clear with transparent background
       ctx.clearRect(0, 0, rect.width, rect.height);
 
@@ -96,11 +104,11 @@ const InteractiveDotGrid = ({
         // Create gradient for hovered dots
         if (scale > 1.3) {
           const gradient = ctx.createRadialGradient(dot.x, dot.y, 0, dot.x, dot.y, size * numLayers);
-          gradient.addColorStop(0, hoverColor);
+          gradient.addColorStop(0, dotTokens.hover);
           gradient.addColorStop(1, 'transparent');
           ctx.fillStyle = gradient;
         } else {
-          ctx.fillStyle = baseColor;
+          ctx.fillStyle = dotTokens.base;
         }
 
         ctx.beginPath();
@@ -136,7 +144,8 @@ const InteractiveDotGrid = ({
 
     // Watch for theme changes
     const observer = new MutationObserver(() => {
-      // Theme changed, dots will update on next frame
+      // Theme changed: re-read the dot tokens on the next frame.
+      dotTokens = readDotTokens();
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 
@@ -153,16 +162,7 @@ const InteractiveDotGrid = ({
   return (
     <canvas
       ref={canvasRef}
-      className={className}
-      style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100%',
-        zIndex: 0,
-        pointerEvents: 'none',
-      }}
+      className={`absolute inset-0 h-full w-full ${className ?? ''}`}
     />
   );
 };

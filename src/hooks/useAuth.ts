@@ -3,7 +3,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { authApi } from '@/services/api';
-import type { User, LoginCredentials, SignupCredentials } from '@/types/auth';
+import type { User, LoginCredentials } from '@/types/auth';
 import { toast } from './use-toast';
 
 // Query keys
@@ -62,30 +62,6 @@ export function useLogin() {
 }
 
 /**
- * Signup mutation
- */
-export function useSignup() {
-  return useMutation({
-    mutationFn: (credentials: SignupCredentials) => authApi.signup(credentials),
-    onSuccess: (result) => {
-      toast({
-        title: 'Account created!',
-        description: result.verificationEmailSent
-          ? 'Check your inbox to verify your email address.'
-          : 'Your account is ready. Verification email delivery is not configured right now.',
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: 'Signup failed',
-        description: error.message,
-        variant: 'destructive',
-      });
-    },
-  });
-}
-
-/**
  * Logout mutation
  */
 export function useLogout() {
@@ -112,51 +88,6 @@ export function useLogout() {
 }
 
 /**
- * Request password reset email
- */
-export function useForgotPassword() {
-  return useMutation({
-    mutationFn: (email: string) => authApi.forgotPassword(email),
-    onSuccess: () => {
-      toast({
-        title: 'Check your email',
-        description: 'If an account exists, you will receive a password reset link.',
-      });
-    },
-    onError: () => {
-      // Don't reveal if email exists
-      toast({
-        title: 'Check your email',
-        description: 'If an account exists, you will receive a password reset link.',
-      });
-    },
-  });
-}
-
-/**
- * Reset password with token
- */
-export function useCompletePasswordReset() {
-  return useMutation({
-    mutationFn: ({ token, password }: { token: string; password: string }) =>
-      authApi.resetPassword(token, password),
-    onSuccess: () => {
-      toast({
-        title: 'Password updated',
-        description: 'You can now log in with your new password.',
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: 'Reset failed',
-        description: error.message,
-        variant: 'destructive',
-      });
-    },
-  });
-}
-
-/**
  * Update user profile
  */
 export function useUpdateProfile() {
@@ -174,50 +105,6 @@ export function useUpdateProfile() {
     onError: (error: Error) => {
       toast({
         title: 'Update failed',
-        description: error.message,
-        variant: 'destructive',
-      });
-    },
-  });
-}
-
-export function useResendVerificationEmail() {
-  return useMutation({
-    mutationFn: () => authApi.resendVerificationEmail(),
-    onSuccess: () => {
-      toast({
-        title: 'Verification email sent',
-        description: 'Check your inbox for the latest verification link.',
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: 'Unable to send verification email',
-        description: error.message,
-        variant: 'destructive',
-      });
-    },
-  });
-}
-
-/**
- * Delete current account
- */
-export function useDeleteAccount() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: () => authApi.deleteAccount(),
-    onSuccess: () => {
-      queryClient.clear();
-      toast({
-        title: 'Account deleted',
-        description: 'Your account and data have been removed.',
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: 'Delete failed',
         description: error.message,
         variant: 'destructive',
       });

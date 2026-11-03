@@ -1,0 +1,41 @@
+{
+  "id": "latex-medium-professional",
+  "version": "1.0.2",
+  "name": "Medium Length Professional",
+  "category": "professional",
+  "description": "The classic Hunner/LaTeXTemplates CV: uppercase headings, rules, tight bullets",
+  "engine": "latex",
+  "variant": "medium-professional",
+  "engineVersionPins": {
+    "latex": "2022"
+  },
+  "pageSize": "letter",
+  "columns": 1,
+  "maxPages": 2,
+  "supportedSections": [
+    "contact",
+    "summary",
+    "experience",
+    "projects",
+    "education",
+    "skills",
+    "certifications"
+  ],
+  "requiredDictKeys": [
+    "contact",
+    "summary",
+    "experience",
+    "education",
+    "skills"
+  ],
+  "fonts": [],
+  "packages": [],
+  "licence": "Apache-2.0",
+  "attribution": "Clearance",
+  "atsProfile": {
+    "singleColumn": true,
+    "tablesAllowed": false,
+    "iconFonts": false
+  },
+  "thumbnail": null
+}

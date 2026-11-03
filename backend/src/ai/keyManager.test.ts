@@ -62,4 +62,29 @@ describe('keyManager extended LLM provider set', () => {
       delete process.env.ZAI_API_KEY;
     }
   });
+
+  it('D2: user-scoped leases AND the rate-limit filter with the user scope (no overwrite)', async () => {
+    delete process.env.RAPIDAPI_API_KEY;
+    await leaseNextKey('rapidapi', 'user-1').catch(() => {});
+    expect(prismaMocks.aIProviderKey.findMany).toHaveBeenCalledTimes(1);
+    const where = prismaMocks.aIProviderKey.findMany.mock.calls[0][0].where as Record<string, unknown>;
+    expect(where.provider).toBe('rapidapi');
+    expect(where.isActive).toBe(true);
+    // Both conditions must be present as a conjunction - the old code assigned
+    // where.OR twice, dropping the rate-limit clause for user leases.
+    expect(Array.isArray(where.AND)).toBe(true);
+    const flat = JSON.stringify(where);
+    expect(flat).toContain('rateLimitedUntil');
+    expect(flat).toContain('user-1');
+    expect(where.OR).toBeUndefined();
+  });
+
+  it('D2: unscoped leases still filter out rate-limited keys', async () => {
+    delete process.env.RAPIDAPI_API_KEY;
+    await leaseNextKey('rapidapi').catch(() => {});
+    const where = prismaMocks.aIProviderKey.findMany.mock.calls[0][0].where as Record<string, unknown>;
+    const flat = JSON.stringify(where);
+    expect(flat).toContain('rateLimitedUntil');
+    expect(flat).not.toContain('user-1');
+  });
 });

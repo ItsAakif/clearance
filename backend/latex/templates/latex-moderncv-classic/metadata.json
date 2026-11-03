@@ -1,0 +1,41 @@
+{
+  "id": "latex-moderncv-classic",
+  "version": "1.0.1",
+  "name": "LaTeX ModernCV Classic",
+  "category": "professional",
+  "description": "Single column, large name, thin rules under section headings - inspired by ModernCV.",
+  "engine": "latex",
+  "variant": "moderncv-classic",
+  "engineVersionPins": {
+    "latex": "2022"
+  },
+  "pageSize": "a4",
+  "columns": 1,
+  "maxPages": 2,
+  "supportedSections": [
+    "contact",
+    "summary",
+    "experience",
+    "projects",
+    "education",
+    "skills",
+    "certifications"
+  ],
+  "requiredDictKeys": [
+    "contact",
+    "summary",
+    "experience",
+    "education",
+    "skills"
+  ],
+  "fonts": [],
+  "packages": [],
+  "licence": "Apache-2.0",
+  "attribution": "Clearance",
+  "atsProfile": {
+    "singleColumn": true,
+    "tablesAllowed": false,
+    "iconFonts": false
+  },
+  "thumbnail": null
+}
