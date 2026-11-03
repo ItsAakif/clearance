@@ -1,4 +1,4 @@
-<div align="center">
+﻿<div align="center">
 
 # Clearance
 
@@ -11,7 +11,7 @@
 [![Docker](https://img.shields.io/badge/Docker-compose-2496ed)](https://docs.docker.com/compose/)
 [![Self-hosted](https://img.shields.io/badge/hosting-self--hosted-success)](#self-hosting)
 
-[Features](#features) - [How it works](#how-it-works) - [Quick start](#quick-start) - [Self-hosting](#self-hosting) - [Screenshots](#screenshots) - [License](#license)
+[Live page](http://clearance.aakifmudel.xyz/) - [GitHub](https://github.com/ItsAakif/clearance) - [Features](#features) - [How it works](#how-it-works) - [Quick start](#quick-start) - [Self-hosting](#self-hosting) - [Screenshots](#screenshots) - [License](#license)
 
 </div>
 
@@ -214,3 +214,4 @@ Only the frontend port is published by default.
 ## License
 
 [MIT](./LICENSE). Use it, fork it, self-host it.
+
